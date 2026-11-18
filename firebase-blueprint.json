@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Spare parts or refurbished appliances in inventory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for product" },
+        "name": { "type": "string", "description": "Product display name" },
+        "category": { "type": "string", "description": "Category or appliance type" },
+        "price": { "type": "number", "description": "Price in ARS" },
+        "stock": { "type": "number", "description": "Available stock count" },
+        "code": { "type": "string", "description": "SKU or internal item code" },
+        "brand": { "type": "string", "description": "Brand of appliance" },
+        "description": { "type": "string", "description": "Detailed description" },
+        "image": { "type": "string", "description": "Primary image URL" },
+        "isRefurbished": { "type": "boolean", "description": "Whether item is refurbished appliance" },
+        "isNewProduct": { "type": "boolean", "description": "Whether item is brand new" },
+        "createdAt": { "type": "number", "description": "Creation timestamp in ms" },
+        "updatedAt": { "type": "number", "description": "Update timestamp in ms" }
+      },
+      "required": ["id", "name", "price"]
+    },
+    "Repair": {
+      "title": "Repair",
+      "description": "Technical service repair record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique repair tracking order ID" },
+        "trackingCode": { "type": "string", "description": "Public customer tracking code" },
+        "clientName": { "type": "string", "description": "Customer full name" },
+        "clientPhone": { "type": "string", "description": "Customer phone number" },
+        "appliance": { "type": "string", "description": "Appliance model or type" },
+        "status": { "type": "string", "description": "Current status of repair" },
+        "createdAt": { "type": "number", "description": "Creation timestamp in ms" },
+        "updatedAt": { "type": "number", "description": "Update timestamp in ms" }
+      },
+      "required": ["id", "clientName", "appliance", "status"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "Application settings and dynamic categories",
+      "type": "object",
+      "properties": {
+        "items": { "type": "array", "description": "List of strings or setting payload" },
+        "updatedAt": { "type": "number", "description": "Update timestamp in ms" }
+      }
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Catalog of spare parts and refurbished equipment"
+    },
+    "/repairs/{repairId}": {
+      "schema": "Repair",
+      "description": "Technical service work orders"
+    },
+    "/settings/{settingId}": {
+      "schema": "Setting",
+      "description": "Dynamic categories, promotions, and shop configurations"
+    }
+  }
+}

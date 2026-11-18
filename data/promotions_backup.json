@@ -1,0 +1,68 @@
+{
+  "items": [
+    {
+      "discountText": "HASTA 20% OFF",
+      "buttonText": "Aprovechar Descuentos",
+      "accentColor": "#E31E24",
+      "badgeColor": "bg-red-500/20 text-red-300 border-red-500/30",
+      "highlights": [
+        "Stock en Coronel Suárez",
+        "Garantía Escrita",
+        "Descuento al Contado"
+      ],
+      "badge": "🔥 PROMOCIÓN SEMANAL",
+      "updatedAt": 1790253936012,
+      "enabled": true,
+      "gradient": "from-slate-950 via-red-950/80 to-slate-900 border-red-800/40",
+      "createdAt": 1790081136012,
+      "couponCode": "PROMO-REJA20",
+      "title": "Hasta 20% OFF en Repuestos Seleccionados de Lavado y Refrigeración",
+      "id": "promo-lavado-refrigeracion",
+      "subtitle": "Bombas de desagote, plaquetas electrónicas, termosensores y motocompresores para Drean, Whirlpool y Philco.",
+      "linkTo": "/catalogo?promo=descuentos"
+    },
+    {
+      "createdAt": 1790167536012,
+      "highlights": [
+        "Repuestos 100% Originales",
+        "Garantía Oficial",
+        "Asesoramiento Técnico"
+      ],
+      "badgeColor": "bg-blue-500/20 text-blue-300 border-blue-500/30",
+      "gradient": "from-slate-950 via-slate-900 to-blue-950/80 border-blue-800/40",
+      "updatedAt": 1790253936012,
+      "subtitle": "Engranajes, motores forzadores, paletas de ventilador y componentes de pequeños electrodomésticos.",
+      "buttonText": "Ver Repuestos Liliana",
+      "accentColor": "#29ABE2",
+      "badge": "⚡ SERVICE OFICIAL AUTORIZADO",
+      "discountText": "15% OFF LILIANA",
+      "title": "15% de Descuento en Repuestos Originales Liliana",
+      "id": "promo-liliana-oficial",
+      "couponCode": "LILIANA-OFICIAL",
+      "enabled": true,
+      "linkTo": "/catalogo?brand=liliana"
+    },
+    {
+      "subtitle": "Si reparás tu lavarropas o heladera con nosotros en Coronel Suárez, bonificamos el traslado al taller.",
+      "badge": "🚚 PROMOCIÓN TALLER",
+      "accentColor": "#10B981",
+      "enabled": true,
+      "gradient": "from-slate-950 via-emerald-950/80 to-slate-900 border-emerald-800/40",
+      "id": "promo-reparacion-retiro",
+      "linkTo": "/reparaciones",
+      "badgeColor": "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+      "highlights": [
+        "Seguimiento Online",
+        "Presupuesto Previo",
+        "Ingreso Rápido"
+      ],
+      "discountText": "RETIRO BONIFICADO",
+      "buttonText": "Pedir Retiro a Domicilio",
+      "updatedAt": 1790253936012,
+      "title": "Retiro a Domicilio Bonificado con Reparación Mayor",
+      "createdAt": 1790253936012
+    }
+  ],
+  "initialized": true,
+  "updatedAt": 1790255042514
+}

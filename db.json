@@ -1,0 +1,84 @@
+{
+  "products": [
+    {
+      "id": "1",
+      "name": "Motor Lavarropas Drean",
+      "category": "Lavarropas",
+      "brand": "Drean",
+      "price": 85000,
+      "stock": 12,
+      "image": ""
+    },
+    {
+      "id": "2",
+      "name": "Termostato Heladera Whirlpool",
+      "category": "Heladera",
+      "brand": "Whirlpool",
+      "price": 25000,
+      "stock": 8,
+      "image": ""
+    },
+    {
+      "id": "3",
+      "name": "Plato Microondas BGH",
+      "category": "Microondas",
+      "brand": "BGH",
+      "price": 15000,
+      "stock": 4,
+      "image": ""
+    },
+    {
+      "id": "4",
+      "name": "Bomba de Desagote",
+      "category": "Lavarropas",
+      "brand": "Universal",
+      "price": 22000,
+      "stock": 25,
+      "image": ""
+    },
+    {
+      "id": "1785866118715",
+      "name": "Fake Product",
+      "category": "Cocina",
+      "brand": "Fake",
+      "price": 100,
+      "stock": 1,
+      "image": "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&q=80&w=600"
+    }
+  ],
+  "orders": [],
+  "repairs": [],
+  "categories": [
+    "Lavarropas",
+    "Microondas"
+  ],
+  "applianceCategories": [
+    "Secarropas",
+    "Microondas",
+    "Horno Eléctrico",
+    "Aspiradora",
+    "Calefactor / Estufa",
+    "Ventilador / Climatizador",
+    "Licuadora / Procesadora",
+    "Pava Eléctrica / Cafetera",
+    "Amasadora / Batidora",
+    "Pequeños Electrodomésticos",
+    "Otro (Especificar)"
+  ],
+  "reviews": [
+    {
+      "id": "1",
+      "author": "Juan P.",
+      "rating": 5,
+      "text": "Excelente atención, conseguí el repuesto para mi lavarropas al instante.",
+      "date": "2023-10-12"
+    },
+    {
+      "id": "2",
+      "author": "María C.",
+      "rating": 4,
+      "text": "Vinieron a reparar mi heladera. Muy profesionales y rápidos.",
+      "date": "2023-11-05"
+    }
+  ]
+}

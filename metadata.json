@@ -1,0 +1,6 @@
+{
+  "name": "La Reja - Repuestos y Reparaciones",
+  "description": "Sitio web de La Reja, local de venta de repuestos y servicio técnico de reparación de electrodomésticos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
