@@ -5,7 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, writeBatch, runTransaction } from 'firebase/firestore';
+import { getFirestore, setLogLevel, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, writeBatch, runTransaction } from 'firebase/firestore';
 import { sendPickupRequestEmail, sendContactFormEmail } from './mailer';
 import {
   createOAuthState,
@@ -123,6 +123,8 @@ try {
 } catch (e) {
   console.warn('Could not read firebase-applet-config.json, using default config', e);
 }
+
+setLogLevel('silent');
 
 const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const db = firebaseConfig.firestoreDatabaseId 
