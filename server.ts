@@ -494,8 +494,13 @@ async function syncDeletedTombstonesWithFirestore(pushLocalToFirestore = false):
         updatedAt: new Date().toISOString()
       });
     }
-  } catch (err) {
-    console.warn('[Tombstones] Firestore sync notice:', err);
+  } catch (err: any) {
+    const msg = String(err?.message || err || '').toLowerCase();
+    if (msg.includes('quota') || msg.includes('resource-exhausted')) {
+      console.log('[Tombstones] Cuota diaria de Firestore alcanzada; usando respaldo local en disco.');
+    } else {
+      console.warn('[Tombstones] Firestore sync notice:', err?.message || err);
+    }
   }
 }
 
@@ -975,8 +980,13 @@ async function warmupProductsCache() {
 
     // Always update disk backup with latest consolidated products
     saveProductsToDisk();
-  } catch (err) {
-    console.warn('[Products Cache] Warmup deferred or failed, disk backup remains active:', err);
+  } catch (err: any) {
+    const msg = String(err?.message || err || '').toLowerCase();
+    if (msg.includes('quota') || msg.includes('resource-exhausted')) {
+      console.log(`[Products Cache] Cuota diaria de Firestore alcanzada; usando respaldo en disco (${localProductsCache.size} productos).`);
+    } else {
+      console.warn('[Products Cache] Warmup deferred or failed, disk backup remains active:', err?.message || err);
+    }
   }
 }
 
@@ -1084,8 +1094,13 @@ async function warmupRepairsCache() {
     });
     saveRepairsToDisk();
     console.log(`[Repairs Cache] Warmed up with ${localRepairsCache.size} repairs from Firestore.`);
-  } catch (err) {
-    console.warn('[Repairs Cache] Warmup failed, using disk backup:', err);
+  } catch (err: any) {
+    const msg = String(err?.message || err || '').toLowerCase();
+    if (msg.includes('quota') || msg.includes('resource-exhausted')) {
+      console.log(`[Repairs Cache] Cuota diaria de Firestore alcanzada; usando respaldo en disco (${localRepairsCache.size} reparaciones).`);
+    } else {
+      console.warn('[Repairs Cache] Warmup failed, using disk backup:', err?.message || err);
+    }
   }
 }
 setTimeout(warmupRepairsCache, 500);

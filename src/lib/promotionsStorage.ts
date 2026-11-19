@@ -77,6 +77,8 @@ export const DEFAULT_PROMOTIONS: Promotion[] = [
 ];
 
 let cachedPromotions: Promotion[] | null = null;
+let lastPromotionsFetchAt = 0;
+const PROMOTIONS_CACHE_TTL_MS = 3 * 60 * 1000;
 let activeFetchPromise: Promise<Promotion[]> | null = null;
 
 // Broadcast channel for multi-tab synchronization
@@ -157,7 +159,12 @@ async function readPromotionsFromFirestore(): Promise<Promotion[]> {
       updatedAt: new Date().toISOString()
     });
     return initial;
-  } catch (e) {
+  } catch (e: any) {
+    const msg = String(e?.message || e || '').toLowerCase();
+    if (msg.includes('quota') || msg.includes('resource-exhausted')) {
+      const local = getStoredPromotions();
+      return local.length > 0 ? local : DEFAULT_PROMOTIONS;
+    }
     handleFirestoreError(e, OperationType.GET, 'settings/promotions');
   }
 }
@@ -179,6 +186,14 @@ async function writePromotionsToFirestore(items: Promotion[]): Promise<Promotion
  * Fetches latest promotions directly from Firestore and updates local cache.
  */
 export async function fetchPromotionsFromApi(forceFresh = false): Promise<Promotion[]> {
+  if (
+    !forceFresh &&
+    cachedPromotions !== null &&
+    Date.now() - lastPromotionsFetchAt < PROMOTIONS_CACHE_TTL_MS
+  ) {
+    return cachedPromotions;
+  }
+
   if (activeFetchPromise && !forceFresh) {
     return activeFetchPromise;
   }
@@ -187,6 +202,7 @@ export async function fetchPromotionsFromApi(forceFresh = false): Promise<Promot
     try {
       const data = await readPromotionsFromFirestore();
       if (Array.isArray(data)) {
+        lastPromotionsFetchAt = Date.now();
         saveStoredPromotions(data);
         return data;
       }
@@ -329,8 +345,8 @@ export function usePromotions() {
   useEffect(() => {
     let isMounted = true;
 
-    // Authoritative fetch on mount
-    fetchPromotionsFromApi(true).then((items) => {
+    // Cached / deduplicated fetch on mount
+    fetchPromotionsFromApi(false).then((items) => {
       if (isMounted && Array.isArray(items)) {
         setPromotions(items);
         setIsLoading(false);

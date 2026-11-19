@@ -56,10 +56,19 @@ export function handleFirestoreError(
 export async function testConnection(): Promise<void> {
   if (typeof window === 'undefined') return;
   try {
+    if (window.sessionStorage?.getItem('lareja_fb_conn_checked') === '1') {
+      return;
+    }
+    window.sessionStorage?.setItem('lareja_fb_conn_checked', '1');
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase();
+      if (msg.includes('the client is offline')) {
+        console.error('Please check your Firebase configuration.');
+      } else if (msg.includes('quota') || msg.includes('resource-exhausted')) {
+        // Quota exceeded: fallback caches handle reads cleanly
+      }
     }
   }
 }

@@ -362,18 +362,18 @@ export default function Admin() {
     setPasswordInput('');
   };
 
-  const fetchData = async (showLoadingSpinner = false) => {
+  const fetchData = async (showLoadingSpinner = false, forceRefresh = false) => {
     if (showLoadingSpinner) setLoading(true);
     else setIsRefreshing(true);
     setFetchError(null);
 
     try {
-      const [statsData, repairsData, categoriesData, productsData, brandsData] = await Promise.all([
+      const [repairsData, statsData, categoriesData, productsData, brandsData] = await Promise.all([
+        fetchRepairsDirect(forceRefresh).catch(() => []),
         getAdminStatsDirect().catch(() => ({ totalOrders: 0, totalRepairs: 0, revenue: 0, activeRepairs: 0 })),
-        fetchRepairsDirect().catch(() => []),
-        fetchUnifiedCategoriesDirect().catch(() => []),
-        fetchProductsDirect().catch(() => getLocalStoredProducts()),
-        fetchQuickBrandsDirect().catch(() => [])
+        fetchUnifiedCategoriesDirect(forceRefresh).catch(() => []),
+        fetchProductsDirect(forceRefresh).catch(() => getLocalStoredProducts()),
+        fetchQuickBrandsDirect(forceRefresh).catch(() => [])
       ]);
       
       setStats({
@@ -1483,7 +1483,7 @@ export default function Admin() {
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <button
-                onClick={() => fetchData(false)}
+                onClick={() => fetchData(false, true)}
                 disabled={isRefreshing}
                 className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-lg transition-colors text-sm flex items-center gap-1.5 border border-slate-700 shadow-sm disabled:opacity-50"
                 title="Actualizar datos del servidor"

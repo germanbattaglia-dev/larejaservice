@@ -41,6 +41,7 @@ const DEFAULT_UNIFIED_CATEGORIES = sortAlphabetically([
 ]);
 import {
   getDeletedProductIds,
+  getLocalStoredProducts,
   markProductIdDeleted,
   unmarkProductIdDeleted,
   saveLocalStoredProducts,
@@ -48,6 +49,50 @@ import {
   LOCAL_STORAGE_DELETED_KEY,
 } from './productsStorage';
 import { Product } from '../types';
+
+const PRODUCTS_CACHE_TTL_MS = 3 * 60 * 1000;
+const SETTINGS_CACHE_TTL_MS = 5 * 60 * 1000;
+const REPAIRS_CACHE_TTL_MS = 60 * 1000;
+const LOCAL_CATEGORIES_CACHE_KEY = 'lareja_categories_cache_v1';
+const LOCAL_BRANDS_CACHE_KEY = 'lareja_quick_brands_cache_v1';
+const LOCAL_REPAIRS_CACHE_KEY = 'lareja_repairs_cache_v1';
+
+let cachedProducts: Product[] | null = null;
+let cachedProductsFetchedAt = 0;
+let cachedProductsUpdateTs = '';
+let inFlightProductsPromise: Promise<Product[]> | null = null;
+
+let cachedCategories: string[] | null = null;
+let cachedCategoriesFetchedAt = 0;
+let inFlightCategoriesPromise: Promise<string[]> | null = null;
+
+let cachedQuickBrands: string[] | null = null;
+let cachedQuickBrandsFetchedAt = 0;
+let inFlightQuickBrandsPromise: Promise<string[]> | null = null;
+
+let cachedRepairs: any[] | null = null;
+let cachedRepairsFetchedAt = 0;
+let inFlightRepairsPromise: Promise<any[]> | null = null;
+
+let cachedOrders: any[] | null = null;
+let cachedOrdersFetchedAt = 0;
+let inFlightOrdersPromise: Promise<any[]> | null = null;
+
+export function isQuotaExceededError(err: unknown): boolean {
+  const msg = String((err as any)?.message || err || '').toLowerCase();
+  const code = String((err as any)?.code || '').toLowerCase();
+  return (
+    code.includes('resource-exhausted') ||
+    msg.includes('quota') ||
+    msg.includes('resource-exhausted') ||
+    msg.includes('free daily read units')
+  );
+}
+
+export function invalidateProductsCache(): void {
+  cachedProducts = null;
+  cachedProductsFetchedAt = 0;
+}
 
 const FALLBACK_IMAGE =
   'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&q=80&w=600';
@@ -176,10 +221,13 @@ function extractCreatedAtMs(data: any, id: string): number {
 }
 
 export function notifyProductsUpdated(): void {
+  invalidateProductsCache();
   if (typeof window === 'undefined') return;
   try {
+    const ts = String(Date.now());
+    cachedProductsUpdateTs = ts;
     window.dispatchEvent(new Event('products_updated'));
-    localStorage.setItem('products_last_update_ts', String(Date.now()));
+    localStorage.setItem('products_last_update_ts', ts);
     if (typeof BroadcastChannel !== 'undefined') {
       const bc = new BroadcastChannel('products_sync');
       bc.postMessage({ type: 'PRODUCTS_UPDATED' });
@@ -256,61 +304,120 @@ async function getMergedDeletedProductIds(): Promise<Set<string>> {
       }
     }
   } catch (err) {
-    console.warn('No se pudieron leer tombstones remotos:', err);
+    if (!isQuotaExceededError(err)) {
+      console.warn('No se pudieron leer tombstones remotos:', err);
+    }
   }
   return merged;
 }
 
-export async function fetchProductsDirect(): Promise<Product[]> {
-  const deletedIds = await getMergedDeletedProductIds();
-  let snapshot;
-  try {
-    snapshot = await getDocs(collection(db, 'products'));
-  } catch (err) {
-    handleFirestoreError(err, OperationType.LIST, 'products');
+export async function fetchProductsDirect(forceRefresh = false): Promise<Product[]> {
+  const currentUpdateTs =
+    typeof localStorage !== 'undefined' ? localStorage.getItem('products_last_update_ts') || '' : '';
+
+  if (
+    !forceRefresh &&
+    cachedProducts !== null &&
+    Date.now() - cachedProductsFetchedAt < PRODUCTS_CACHE_TTL_MS &&
+    currentUpdateTs === cachedProductsUpdateTs
+  ) {
+    return cachedProducts;
   }
 
-  const products: Product[] = [];
-  const seen = new Set<string>();
+  if (inFlightProductsPromise && !forceRefresh) {
+    return inFlightProductsPromise;
+  }
 
-  for (const docSnap of snapshot.docs) {
-    const strId = String(docSnap.id);
-    if (deletedIds.has(strId)) {
-      deleteDoc(doc(db, 'products', strId)).catch(() => {});
-      continue;
+  const run = (async (): Promise<Product[]> => {
+    const deletedIds = await getMergedDeletedProductIds();
+    let snapshot;
+    try {
+      snapshot = await getDocs(collection(db, 'products'));
+    } catch (err) {
+      if (isQuotaExceededError(err)) {
+        console.warn('[Firestore] Cuota diaria alcanzada al leer productos; usando caché local.');
+        const localFallback = sortProductsNewestFirst(
+          getLocalStoredProducts().filter((p) => p && p.id && !deletedIds.has(String(p.id)))
+        );
+        cachedProducts = localFallback;
+        cachedProductsFetchedAt = Date.now();
+        return localFallback;
+      }
+      const localFallback = getLocalStoredProducts();
+      if (localFallback.length > 0) {
+        return sortProductsNewestFirst(
+          localFallback.filter((p) => p && p.id && !deletedIds.has(String(p.id)))
+        );
+      }
+      handleFirestoreError(err, OperationType.LIST, 'products');
     }
-    if (seen.has(strId)) continue;
-    seen.add(strId);
 
-    const data = docSnap.data() as any;
-    const createdAtMs = extractCreatedAtMs(data, strId);
-    const updatedAtMs =
-      typeof data.updatedAt === 'number'
-        ? data.updatedAt < 10000000000
-          ? data.updatedAt * 1000
-          : data.updatedAt
-        : createdAtMs;
+    const products: Product[] = [];
+    const seen = new Set<string>();
 
-    products.push({
-      ...data,
-      id: strId,
-      createdAt: createdAtMs || 0,
-      updatedAt: updatedAtMs || 0,
-    } as Product);
+    for (const docSnap of snapshot.docs) {
+      const strId = String(docSnap.id);
+      if (deletedIds.has(strId)) {
+        deleteDoc(doc(db, 'products', strId)).catch(() => {});
+        continue;
+      }
+      if (seen.has(strId)) continue;
+      seen.add(strId);
+
+      const data = docSnap.data() as any;
+      const createdAtMs = extractCreatedAtMs(data, strId);
+      const updatedAtMs =
+        typeof data.updatedAt === 'number'
+          ? data.updatedAt < 10000000000
+            ? data.updatedAt * 1000
+            : data.updatedAt
+          : createdAtMs;
+
+      products.push({
+        ...data,
+        id: strId,
+        createdAt: createdAtMs || 0,
+        updatedAt: updatedAtMs || 0,
+      } as Product);
+    }
+
+    const sorted = sortProductsNewestFirst(products);
+    saveLocalStoredProducts(sorted);
+    cachedProducts = sorted;
+    cachedProductsFetchedAt = Date.now();
+    cachedProductsUpdateTs = currentUpdateTs;
+    return sorted;
+  })();
+
+  inFlightProductsPromise = run;
+  try {
+    return await run;
+  } finally {
+    if (inFlightProductsPromise === run) {
+      inFlightProductsPromise = null;
+    }
   }
-
-  const sorted = sortProductsNewestFirst(products);
-  saveLocalStoredProducts(sorted);
-  return sorted;
 }
 
 export async function fetchProductByIdDirect(id: string): Promise<Product | null> {
   const cleanId = String(id || '').trim();
   if (!cleanId) return null;
+
+  if (cachedProducts !== null && Date.now() - cachedProductsFetchedAt < PRODUCTS_CACHE_TTL_MS) {
+    const cachedHit = cachedProducts.find((p) => String(p.id) === cleanId);
+    if (cachedHit) return cachedHit;
+  }
+
   let snap;
   try {
     snap = await getDoc(doc(db, 'products', cleanId));
   } catch (err) {
+    if (isQuotaExceededError(err)) {
+      const localMatch = getLocalStoredProducts().find((p) => String(p.id) === cleanId);
+      return localMatch || null;
+    }
+    const localMatch = getLocalStoredProducts().find((p) => String(p.id) === cleanId);
+    if (localMatch) return localMatch;
     handleFirestoreError(err, OperationType.GET, `products/${cleanId}`);
   }
   if (!snap.exists()) return null;
@@ -596,26 +703,82 @@ function cleanCategoriesList(list: string[]): string[] {
   return sortAlphabetically(unique);
 }
 
-export async function fetchUnifiedCategoriesDirect(): Promise<string[]> {
+export async function fetchUnifiedCategoriesDirect(forceRefresh = false): Promise<string[]> {
+  if (
+    !forceRefresh &&
+    cachedCategories !== null &&
+    Date.now() - cachedCategoriesFetchedAt < SETTINGS_CACHE_TTL_MS
+  ) {
+    return cachedCategories;
+  }
+
+  if (inFlightCategoriesPromise && !forceRefresh) {
+    return inFlightCategoriesPromise;
+  }
+
+  const run = (async (): Promise<string[]> => {
+    try {
+      const docSnap = await getDoc(doc(db, 'settings', 'categories'));
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (Array.isArray(data?.items) && data.items.length > 0) {
+          const cleaned = cleanCategoriesList(data.items);
+          cachedCategories = cleaned;
+          cachedCategoriesFetchedAt = Date.now();
+          try {
+            if (typeof localStorage !== 'undefined') {
+              localStorage.setItem(LOCAL_CATEGORIES_CACHE_KEY, JSON.stringify(cleaned));
+            }
+          } catch {}
+          return cleaned;
+        }
+      }
+      const appSnap = await getDoc(doc(db, 'settings', 'applianceCategories'));
+      if (appSnap.exists()) {
+        const data = appSnap.data();
+        if (Array.isArray(data?.items) && data.items.length > 0) {
+          const cleaned = cleanCategoriesList(data.items);
+          cachedCategories = cleaned;
+          cachedCategoriesFetchedAt = Date.now();
+          try {
+            if (typeof localStorage !== 'undefined') {
+              localStorage.setItem(LOCAL_CATEGORIES_CACHE_KEY, JSON.stringify(cleaned));
+            }
+          } catch {}
+          return cleaned;
+        }
+      }
+      cachedCategories = DEFAULT_UNIFIED_CATEGORIES;
+      cachedCategoriesFetchedAt = Date.now();
+      return DEFAULT_UNIFIED_CATEGORIES;
+    } catch (err) {
+      if (!isQuotaExceededError(err)) {
+        console.warn('Fallback to default categories:', err);
+      }
+      try {
+        if (typeof localStorage !== 'undefined') {
+          const raw = localStorage.getItem(LOCAL_CATEGORIES_CACHE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              cachedCategories = parsed;
+              cachedCategoriesFetchedAt = Date.now();
+              return parsed;
+            }
+          }
+        }
+      } catch {}
+      return DEFAULT_UNIFIED_CATEGORIES;
+    }
+  })();
+
+  inFlightCategoriesPromise = run;
   try {
-    const docSnap = await getDoc(doc(db, 'settings', 'categories'));
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      if (Array.isArray(data?.items) && data.items.length > 0) {
-        return cleanCategoriesList(data.items);
-      }
+    return await run;
+  } finally {
+    if (inFlightCategoriesPromise === run) {
+      inFlightCategoriesPromise = null;
     }
-    const appSnap = await getDoc(doc(db, 'settings', 'applianceCategories'));
-    if (appSnap.exists()) {
-      const data = appSnap.data();
-      if (Array.isArray(data?.items) && data.items.length > 0) {
-        return cleanCategoriesList(data.items);
-      }
-    }
-    return DEFAULT_UNIFIED_CATEGORIES;
-  } catch (err) {
-    console.warn('Fallback to default categories:', err);
-    return DEFAULT_UNIFIED_CATEGORIES;
   }
 }
 
@@ -629,6 +792,13 @@ async function saveUnifiedCategoriesDirect(categories: string[]): Promise<string
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, 'settings/categories');
   }
+  cachedCategories = sorted;
+  cachedCategoriesFetchedAt = Date.now();
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LOCAL_CATEGORIES_CACHE_KEY, JSON.stringify(sorted));
+    }
+  } catch {}
   return sorted;
 }
 
@@ -688,16 +858,62 @@ export async function resetUnifiedCategoriesDirect(): Promise<string[]> {
   return saveUnifiedCategoriesDirect(DEFAULT_UNIFIED_CATEGORIES);
 }
 
-export async function fetchQuickBrandsDirect(): Promise<string[]> {
-  try {
-    const snap = await getDoc(doc(db, 'settings', 'quickBrands'));
-    if (snap.exists() && Array.isArray(snap.data()?.items)) {
-      return snap.data().items;
-    }
-  } catch (err) {
-    console.warn('Error reading quickBrands:', err);
+export async function fetchQuickBrandsDirect(forceRefresh = false): Promise<string[]> {
+  if (
+    !forceRefresh &&
+    cachedQuickBrands !== null &&
+    Date.now() - cachedQuickBrandsFetchedAt < SETTINGS_CACHE_TTL_MS
+  ) {
+    return cachedQuickBrands;
   }
-  return [...DEFAULT_QUICK_BRANDS];
+
+  if (inFlightQuickBrandsPromise && !forceRefresh) {
+    return inFlightQuickBrandsPromise;
+  }
+
+  const run = (async (): Promise<string[]> => {
+    try {
+      const snap = await getDoc(doc(db, 'settings', 'quickBrands'));
+      if (snap.exists() && Array.isArray(snap.data()?.items)) {
+        const items = snap.data().items;
+        cachedQuickBrands = items;
+        cachedQuickBrandsFetchedAt = Date.now();
+        try {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(LOCAL_BRANDS_CACHE_KEY, JSON.stringify(items));
+          }
+        } catch {}
+        return items;
+      }
+    } catch (err) {
+      if (!isQuotaExceededError(err)) {
+        console.warn('Error reading quickBrands:', err);
+      }
+      try {
+        if (typeof localStorage !== 'undefined') {
+          const raw = localStorage.getItem(LOCAL_BRANDS_CACHE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              cachedQuickBrands = parsed;
+              cachedQuickBrandsFetchedAt = Date.now();
+              return parsed;
+            }
+          }
+        }
+      } catch {}
+    }
+    return [...DEFAULT_QUICK_BRANDS];
+  })();
+
+  inFlightQuickBrandsPromise = run;
+  try {
+    return await run;
+  } finally {
+    if (inFlightQuickBrandsPromise === run) {
+      inFlightQuickBrandsPromise = null;
+    }
+  }
 }
 
 export async function addQuickBrandDirect(name: string): Promise<string[]> {
@@ -713,6 +929,13 @@ export async function addQuickBrandDirect(name: string): Promise<string[]> {
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, 'settings/quickBrands');
   }
+  cachedQuickBrands = updated;
+  cachedQuickBrandsFetchedAt = Date.now();
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LOCAL_BRANDS_CACHE_KEY, JSON.stringify(updated));
+    }
+  } catch {}
   return updated;
 }
 
@@ -727,6 +950,13 @@ export async function deleteQuickBrandDirect(brandName: string): Promise<string[
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, 'settings/quickBrands');
   }
+  cachedQuickBrands = updated;
+  cachedQuickBrandsFetchedAt = Date.now();
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LOCAL_BRANDS_CACHE_KEY, JSON.stringify(updated));
+    }
+  } catch {}
   return updated;
 }
 
@@ -737,6 +967,13 @@ export async function resetQuickBrandsDirect(): Promise<string[]> {
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, 'settings/quickBrands');
   }
+  cachedQuickBrands = updated;
+  cachedQuickBrandsFetchedAt = Date.now();
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LOCAL_BRANDS_CACHE_KEY, JSON.stringify(updated));
+    }
+  } catch {}
   return updated;
 }
 
@@ -744,20 +981,76 @@ export async function resetQuickBrandsDirect(): Promise<string[]> {
 // REPAIRS, TRACKING, ORDERS, POS & STATS
 // ==========================================
 
-export async function fetchRepairsDirect(): Promise<any[]> {
-  let snapshot;
+function loadLocalRepairsCache(): any[] {
   try {
-    snapshot = await getDocs(collection(db, 'repairs'));
-  } catch (err) {
-    handleFirestoreError(err, OperationType.LIST, 'repairs');
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(LOCAL_REPAIRS_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    }
+  } catch {}
+  return [];
+}
+
+function saveLocalRepairsCache(list: any[]): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LOCAL_REPAIRS_CACHE_KEY, JSON.stringify(list.slice(0, 200)));
+    }
+  } catch {}
+}
+
+export async function fetchRepairsDirect(forceRefresh = false): Promise<any[]> {
+  if (
+    !forceRefresh &&
+    cachedRepairs !== null &&
+    Date.now() - cachedRepairsFetchedAt < REPAIRS_CACHE_TTL_MS
+  ) {
+    return cachedRepairs;
   }
-  const list = snapshot.docs.map((d) => ({ ...d.data(), id: d.id }));
-  list.sort((a: any, b: any) => {
-    const ta = new Date(a.date || a.createdAt || 0).getTime();
-    const tb = new Date(b.date || b.createdAt || 0).getTime();
-    return tb - ta;
-  });
-  return list;
+
+  if (inFlightRepairsPromise && !forceRefresh) {
+    return inFlightRepairsPromise;
+  }
+
+  const run = (async (): Promise<any[]> => {
+    let snapshot;
+    try {
+      snapshot = await getDocs(collection(db, 'repairs'));
+    } catch (err) {
+      if (isQuotaExceededError(err)) {
+        console.warn('[Firestore] Cuota diaria alcanzada al leer reparaciones; usando caché local.');
+        const local = loadLocalRepairsCache();
+        cachedRepairs = local;
+        cachedRepairsFetchedAt = Date.now();
+        return local;
+      }
+      const local = loadLocalRepairsCache();
+      if (local.length > 0) return local;
+      handleFirestoreError(err, OperationType.LIST, 'repairs');
+    }
+    const list = snapshot.docs.map((d) => ({ ...d.data(), id: d.id }));
+    list.sort((a: any, b: any) => {
+      const ta = new Date(a.date || a.createdAt || 0).getTime();
+      const tb = new Date(b.date || b.createdAt || 0).getTime();
+      return tb - ta;
+    });
+    cachedRepairs = list;
+    cachedRepairsFetchedAt = Date.now();
+    saveLocalRepairsCache(list);
+    return list;
+  })();
+
+  inFlightRepairsPromise = run;
+  try {
+    return await run;
+  } finally {
+    if (inFlightRepairsPromise === run) {
+      inFlightRepairsPromise = null;
+    }
+  }
 }
 
 export async function createRepairDirect(payload: any): Promise<any> {
@@ -772,6 +1065,8 @@ export async function createRepairDirect(payload: any): Promise<any> {
 
   try {
     await setDoc(doc(db, 'repairs', id), newRepair);
+    cachedRepairs = null;
+    cachedRepairsFetchedAt = 0;
   } catch (err) {
     handleFirestoreError(err, OperationType.CREATE, `repairs/${id}`);
   }
@@ -817,10 +1112,14 @@ export async function updateRepairDirect(id: string, payload: any): Promise<any>
   try {
     if (docSnap.exists()) {
       await updateDoc(docRef, cleanPayload);
+      cachedRepairs = null;
+      cachedRepairsFetchedAt = 0;
       return { ...docSnap.data(), ...cleanPayload, id: targetId };
     } else {
       const merged = { ...cleanPayload, id: targetId };
       await setDoc(docRef, merged, { merge: true });
+      cachedRepairs = null;
+      cachedRepairsFetchedAt = 0;
       return merged;
     }
   } catch (err) {
@@ -839,11 +1138,15 @@ export async function deleteRepairDirect(id: string): Promise<void> {
     const snap = await getDoc(doc(db, 'repairs', cleanId));
     if (snap.exists()) {
       await deleteDoc(doc(db, 'repairs', cleanId));
+      cachedRepairs = null;
+      cachedRepairsFetchedAt = 0;
       return;
     }
     const upper = cleanId.toUpperCase();
     if (upper !== cleanId) {
       await deleteDoc(doc(db, 'repairs', upper));
+      cachedRepairs = null;
+      cachedRepairsFetchedAt = 0;
     }
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, `repairs/${cleanId}`);
@@ -907,6 +1210,34 @@ export async function findRepairOrOrderByCodeDirect(
   return null;
 }
 
+async function fetchOrdersCached(): Promise<any[]> {
+  if (cachedOrders !== null && Date.now() - cachedOrdersFetchedAt < REPAIRS_CACHE_TTL_MS) {
+    return cachedOrders;
+  }
+  if (inFlightOrdersPromise) return inFlightOrdersPromise;
+
+  const run = (async (): Promise<any[]> => {
+    try {
+      const ordersSnap = await getDocs(collection(db, 'orders'));
+      const list = ordersSnap.docs.map((d) => d.data());
+      cachedOrders = list;
+      cachedOrdersFetchedAt = Date.now();
+      return list;
+    } catch {
+      return cachedOrders || [];
+    }
+  })();
+
+  inFlightOrdersPromise = run;
+  try {
+    return await run;
+  } finally {
+    if (inFlightOrdersPromise === run) {
+      inFlightOrdersPromise = null;
+    }
+  }
+}
+
 export async function getAdminStatsDirect(): Promise<{
   totalOrders: number;
   totalRepairs: number;
@@ -914,13 +1245,10 @@ export async function getAdminStatsDirect(): Promise<{
   activeRepairs: number;
 }> {
   try {
-    const [ordersSnap, repairsSnap] = await Promise.all([
-      getDocs(collection(db, 'orders')).catch(() => ({ docs: [] } as any)),
-      getDocs(collection(db, 'repairs')).catch(() => ({ docs: [] } as any)),
+    const [orders, repairs] = await Promise.all([
+      fetchOrdersCached(),
+      fetchRepairsDirect().catch(() => []),
     ]);
-
-    const orders = ordersSnap.docs?.map((d: any) => d.data()) || [];
-    const repairs = repairsSnap.docs?.map((d: any) => d.data()) || [];
 
     return {
       totalOrders: orders.length,
@@ -1012,6 +1340,8 @@ export async function createWebOrderDirect(body: any): Promise<any> {
       handleFirestoreError(err, OperationType.WRITE, `orders/${id}`);
     }
 
+    cachedOrders = null;
+    cachedOrdersFetchedAt = 0;
     notifyProductsUpdated();
     const saved = await getDoc(doc(db, 'orders', id)).catch(() => null);
     return saved && saved.exists() ? { ...saved.data(), id } : { id, total: body?.total || 0, items: orderItems };
@@ -1026,6 +1356,8 @@ export async function createWebOrderDirect(body: any): Promise<any> {
   });
   try {
     await setDoc(doc(db, 'orders', id), fallbackOrder);
+    cachedOrders = null;
+    cachedOrdersFetchedAt = 0;
   } catch (err) {
     handleFirestoreError(err, OperationType.CREATE, `orders/${id}`);
   }
