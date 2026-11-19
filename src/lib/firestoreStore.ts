@@ -48,6 +48,7 @@ import {
   sortProductsNewestFirst,
   LOCAL_STORAGE_DELETED_KEY,
 } from './productsStorage';
+import { getIdbCatalog, saveIdbCatalog } from './idbCache';
 import { Product } from '../types';
 
 const PRODUCTS_CACHE_TTL_MS = 3 * 60 * 1000;
@@ -92,6 +93,57 @@ export function isQuotaExceededError(err: unknown): boolean {
 export function invalidateProductsCache(): void {
   cachedProducts = null;
   cachedProductsFetchedAt = 0;
+}
+
+let inFlightStaticFallback: Promise<Product[]> | null = null;
+
+async function fetchStaticProductsFallback(deletedIds: Set<string>): Promise<Product[]> {
+  if (typeof window === 'undefined') return [];
+  if (!inFlightStaticFallback) {
+    inFlightStaticFallback = fetch('/products-fallback.json', { cache: 'no-store' })
+      .then(async (res) => {
+        if (!res.ok) return [];
+        const data = await res.json();
+        return Array.isArray(data) ? (data as Product[]) : [];
+      })
+      .catch(() => [])
+      .finally(() => {
+        inFlightStaticFallback = null;
+      });
+  }
+  const raw = await inFlightStaticFallback;
+  return sortProductsNewestFirst(
+    raw.filter((p) => p && p.id && !deletedIds.has(String(p.id)))
+  );
+}
+
+function bumpCatalogMeta(count?: number): void {
+  const version = Date.now();
+  setDoc(
+    doc(db, 'settings', 'catalogMeta'),
+    {
+      version,
+      updatedAt: version,
+      ...(typeof count === 'number' ? { count } : {}),
+    },
+    { merge: true }
+  ).catch(() => {});
+}
+
+async function applyOptimisticCatalogMutation(mutator: (list: Product[]) => Product[]): Promise<void> {
+  try {
+    const idb = await getIdbCatalog();
+    const base = cachedProducts || idb?.products || getLocalStoredProducts();
+    if (Array.isArray(base) && base.length > 0) {
+      const next = sortProductsNewestFirst(mutator(base));
+      cachedProducts = next;
+      cachedProductsFetchedAt = Date.now();
+      saveLocalStoredProducts(next);
+      await saveIdbCatalog(next, Date.now());
+    }
+  } catch {
+    // non-fatal
+  }
 }
 
 const FALLBACK_IMAGE =
@@ -329,25 +381,88 @@ export async function fetchProductsDirect(forceRefresh = false): Promise<Product
   }
 
   const run = (async (): Promise<Product[]> => {
-    const deletedIds = await getMergedDeletedProductIds();
+    const localDeleted = getDeletedProductIds();
+    const idbRecord = await getIdbCatalog();
+
+    // 1. Lightweight 1-read version check against settings/catalogMeta (avoids scanning 89 large docs on every visit)
+    let remoteMetaVersion: number | null = null;
+    let metaQuotaExceeded = false;
+    if (!forceRefresh && idbRecord && idbRecord.products.length > 0 && idbRecord.version > 0) {
+      try {
+        const metaSnap = await getDoc(doc(db, 'settings', 'catalogMeta'));
+        if (metaSnap.exists()) {
+          const v = Number(metaSnap.data()?.version || 0);
+          if (v > 0) remoteMetaVersion = v;
+          if (remoteMetaVersion !== null && remoteMetaVersion === idbRecord.version) {
+            const freshFromIdb = sortProductsNewestFirst(
+              idbRecord.products.filter((p) => p && p.id && !localDeleted.has(String(p.id)))
+            );
+            cachedProducts = freshFromIdb;
+            cachedProductsFetchedAt = Date.now();
+            cachedProductsUpdateTs = currentUpdateTs;
+            return freshFromIdb;
+          }
+        }
+      } catch (metaErr) {
+        if (isQuotaExceededError(metaErr)) {
+          metaQuotaExceeded = true;
+        }
+      }
+    }
+
+    // If quota is already exhausted and we have IndexedDB cached products, serve them immediately
+    if (metaQuotaExceeded && idbRecord && idbRecord.products.length > 0) {
+      const freshFromIdb = sortProductsNewestFirst(
+        idbRecord.products.filter((p) => p && p.id && !localDeleted.has(String(p.id)))
+      );
+      cachedProducts = freshFromIdb;
+      cachedProductsFetchedAt = Date.now();
+      cachedProductsUpdateTs = currentUpdateTs;
+      return freshFromIdb;
+    }
+
+    const deletedIds = metaQuotaExceeded ? localDeleted : await getMergedDeletedProductIds();
     let snapshot;
     try {
+      if (metaQuotaExceeded) {
+        throw new Error('Quota limit exceeded');
+      }
       snapshot = await getDocs(collection(db, 'products'));
     } catch (err) {
       if (isQuotaExceededError(err)) {
-        console.warn('[Firestore] Cuota diaria alcanzada al leer productos; usando caché local.');
-        const localFallback = sortProductsNewestFirst(
-          getLocalStoredProducts().filter((p) => p && p.id && !deletedIds.has(String(p.id)))
-        );
-        cachedProducts = localFallback;
-        cachedProductsFetchedAt = Date.now();
-        return localFallback;
+        console.warn('[Firestore] Cuota diaria alcanzada al leer productos; usando respaldo local/estático.');
       }
-      const localFallback = getLocalStoredProducts();
-      if (localFallback.length > 0) {
-        return sortProductsNewestFirst(
-          localFallback.filter((p) => p && p.id && !deletedIds.has(String(p.id)))
+
+      if (idbRecord && idbRecord.products.length > 0) {
+        const idbFallback = sortProductsNewestFirst(
+          idbRecord.products.filter((p) => p && p.id && !deletedIds.has(String(p.id)))
         );
+        cachedProducts = idbFallback;
+        cachedProductsFetchedAt = Date.now();
+        return idbFallback;
+      }
+
+      const localStorageList = getLocalStoredProducts();
+      if (localStorageList.length > 0) {
+        const lsFallback = sortProductsNewestFirst(
+          localStorageList.filter((p) => p && p.id && !deletedIds.has(String(p.id)))
+        );
+        cachedProducts = lsFallback;
+        cachedProductsFetchedAt = Date.now();
+        return lsFallback;
+      }
+
+      const staticFallback = await fetchStaticProductsFallback(deletedIds);
+      if (staticFallback.length > 0) {
+        // Save with version 0 so once Firestore quota resets tomorrow it syncs live automatically
+        saveIdbCatalog(staticFallback, 0).catch(() => {});
+        cachedProducts = staticFallback;
+        cachedProductsFetchedAt = Date.now();
+        return staticFallback;
+      }
+
+      if (isQuotaExceededError(err)) {
+        return [];
       }
       handleFirestoreError(err, OperationType.LIST, 'products');
     }
@@ -382,7 +497,27 @@ export async function fetchProductsDirect(forceRefresh = false): Promise<Product
     }
 
     const sorted = sortProductsNewestFirst(products);
+    let versionToStore = remoteMetaVersion || 0;
+    if (!versionToStore) {
+      try {
+        const metaSnap = await getDoc(doc(db, 'settings', 'catalogMeta'));
+        if (metaSnap.exists() && Number(metaSnap.data()?.version) > 0) {
+          versionToStore = Number(metaSnap.data()?.version);
+        } else {
+          versionToStore = Date.now();
+          setDoc(
+            doc(db, 'settings', 'catalogMeta'),
+            { version: versionToStore, count: sorted.length, updatedAt: versionToStore },
+            { merge: true }
+          ).catch(() => {});
+        }
+      } catch {
+        versionToStore = Date.now();
+      }
+    }
+
     saveLocalStoredProducts(sorted);
+    saveIdbCatalog(sorted, versionToStore).catch(() => {});
     cachedProducts = sorted;
     cachedProductsFetchedAt = Date.now();
     cachedProductsUpdateTs = currentUpdateTs;
@@ -408,16 +543,27 @@ export async function fetchProductByIdDirect(id: string): Promise<Product | null
     if (cachedHit) return cachedHit;
   }
 
+  const idbRecord = await getIdbCatalog();
+  if (idbRecord && idbRecord.products.length > 0 && idbRecord.version > 0) {
+    const hit = idbRecord.products.find((p) => String(p.id) === cleanId);
+    if (hit) return hit;
+  }
+
   let snap;
   try {
     snap = await getDoc(doc(db, 'products', cleanId));
   } catch (err) {
-    if (isQuotaExceededError(err)) {
-      const localMatch = getLocalStoredProducts().find((p) => String(p.id) === cleanId);
-      return localMatch || null;
+    if (idbRecord && idbRecord.products.length > 0) {
+      const idbHit = idbRecord.products.find((p) => String(p.id) === cleanId);
+      if (idbHit) return idbHit;
     }
     const localMatch = getLocalStoredProducts().find((p) => String(p.id) === cleanId);
     if (localMatch) return localMatch;
+
+    if (isQuotaExceededError(err)) {
+      const staticList = await fetchStaticProductsFallback(getDeletedProductIds());
+      return staticList.find((p) => String(p.id) === cleanId) || null;
+    }
     handleFirestoreError(err, OperationType.GET, `products/${cleanId}`);
   }
   if (!snap.exists()) return null;
@@ -503,6 +649,8 @@ export async function createProductDirect(body: any): Promise<Product> {
     // non-fatal
   }
 
+  bumpCatalogMeta();
+  await applyOptimisticCatalogMutation((list) => [newProduct as Product, ...list.filter((p) => String(p.id) !== id)]);
   notifyProductsUpdated();
   return newProduct as Product;
 }
@@ -564,6 +712,10 @@ export async function updateProductDirect(id: string, body: any): Promise<Produc
     handleFirestoreError(err, OperationType.UPDATE, `products/${cleanId}`);
   }
 
+  bumpCatalogMeta();
+  await applyOptimisticCatalogMutation((list) =>
+    list.map((p) => (String(p.id) === cleanId ? (updatedProduct as Product) : p))
+  );
   notifyProductsUpdated();
   return updatedProduct as Product;
 }
@@ -628,6 +780,9 @@ export async function deleteProductDirect(id: string): Promise<void> {
     }
   }
 
+  bumpCatalogMeta();
+  const deletedIdSet = new Set(idsToDelete.map(String));
+  await applyOptimisticCatalogMutation((list) => list.filter((p) => !deletedIdSet.has(String(p.id))));
   notifyProductsUpdated();
 }
 
@@ -676,6 +831,9 @@ export async function deduplicateProductsDirect(): Promise<{ removedCount: numbe
   }
 
   if (toDeleteIds.length > 0) {
+    bumpCatalogMeta(snapshot.docs.length - toDeleteIds.length);
+    const dupSet = new Set(toDeleteIds.map(String));
+    await applyOptimisticCatalogMutation((list) => list.filter((p) => !dupSet.has(String(p.id))));
     notifyProductsUpdated();
   }
 
@@ -1342,6 +1500,7 @@ export async function createWebOrderDirect(body: any): Promise<any> {
 
     cachedOrders = null;
     cachedOrdersFetchedAt = 0;
+    bumpCatalogMeta();
     notifyProductsUpdated();
     const saved = await getDoc(doc(db, 'orders', id)).catch(() => null);
     return saved && saved.exists() ? { ...saved.data(), id } : { id, total: body?.total || 0, items: orderItems };
@@ -1405,6 +1564,7 @@ export async function createPosSaleDirect(body: {
 
     batch.set(doc(db, 'sales', saleId), saleRecord);
     await batch.commit();
+    bumpCatalogMeta();
     notifyProductsUpdated();
     return saleRecord;
   } catch (err) {
