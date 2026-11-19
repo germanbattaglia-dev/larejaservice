@@ -1,11 +1,24 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+function stripCloudflareRedirects() {
+  return {
+    name: 'strip-cloudflare-redirects',
+    closeBundle() {
+      const redirectsFile = path.resolve(__dirname, 'dist/_redirects');
+      if (fs.existsSync(redirectsFile)) {
+        fs.unlinkSync(redirectsFile);
+      }
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), stripCloudflareRedirects()],
     resolve: {
       dedupe: ['react', 'react-dom'],
       alias: {
