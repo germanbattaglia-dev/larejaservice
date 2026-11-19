@@ -20,6 +20,11 @@ import {
   Clock
 } from 'lucide-react';
 import { Product } from '../../types';
+import {
+  fetchProductsDirect,
+  tryBackendJsonGet,
+  tryBackendJsonPost,
+} from '../../lib/firestoreStore';
 
 interface MLStatus {
   connected: boolean;
@@ -47,15 +52,21 @@ export default function MercadoLibrePanel() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
   const [isPredicting, setIsPredicting] = useState(false);
 
+  const [staticHostingOnly, setStaticHostingOnly] = useState(false);
+
   const loadData = async () => {
     try {
-      const [statusRes, productsRes] = await Promise.all([
-        fetch('/api/mercadolibre/status', { cache: 'no-store' }),
-        fetch('/api/products?t=' + Date.now(), { cache: 'no-store' })
+      const [statusRes, productData] = await Promise.all([
+        tryBackendJsonGet('/api/mercadolibre/status'),
+        fetchProductsDirect().catch(() => [])
       ]);
-      const statusData = await statusRes.json();
-      const productData = await productsRes.json();
-      setStatus(statusData);
+      if (statusRes && statusRes.ok) {
+        setStatus(statusRes.data);
+        setStaticHostingOnly(false);
+      } else {
+        setStatus({ connected: false, configured: false });
+        setStaticHostingOnly(statusRes === null);
+      }
       setProducts(Array.isArray(productData) ? productData : []);
     } catch (e: any) {
       setMessage({ text: 'No se pudo consultar el estado de Mercado Libre.', type: 'error' });
@@ -86,12 +97,14 @@ export default function MercadoLibrePanel() {
     setBusy('connect');
     setMessage(null);
     try {
-      const res = await fetch('/api/mercadolibre/oauth/start');
-      const data = await res.json();
-      if (!res.ok || !data.url) {
-        throw new Error(data.error || 'No se pudo iniciar la conexión con Mercado Libre.');
+      const res = await tryBackendJsonGet('/api/mercadolibre/oauth/start');
+      if (!res) {
+        throw new Error('La vinculación directa con Mercado Libre requiere un servidor Node.js activo (no disponible en hosting estático Cloudflare Pages).');
       }
-      window.location.href = data.url;
+      if (!res.ok || !res.data?.url) {
+        throw new Error(res.data?.error || 'No se pudo iniciar la conexión con Mercado Libre.');
+      }
+      window.location.href = res.data.url;
     } catch (e: any) {
       setMessage({ text: e.message || 'Error al conectar Mercado Libre.', type: 'error' });
       setBusy('');
@@ -102,10 +115,12 @@ export default function MercadoLibrePanel() {
     setBusy(key);
     setMessage(null);
     try {
-      const res = await fetch(path, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'La operación no pudo completarse.');
-      setMessage({ text: data.message || 'Operación completada con éxito.', type: 'ok' });
+      const res = await tryBackendJsonPost(path, {});
+      if (!res) {
+        throw new Error('Esta acción de Mercado Libre requiere un servidor Node.js activo.');
+      }
+      if (!res.ok) throw new Error(res.data?.error || 'La operación no pudo completarse.');
+      setMessage({ text: res.data?.message || 'Operación completada con éxito.', type: 'ok' });
       await loadData();
     } catch (e: any) {
       setMessage({ text: e.message || 'Error en la operación de Mercado Libre.', type: 'error' });
@@ -121,14 +136,12 @@ export default function MercadoLibrePanel() {
     setSelectedCategoryId('');
 
     try {
-      const res = await fetch(`/api/mercadolibre/categories/predict?q=${encodeURIComponent(product.name)}`);
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        setCategorySuggestions(data);
-        setSelectedCategoryId(data[0].category_id || '');
+      const res = await tryBackendJsonGet(`/api/mercadolibre/categories/predict?q=${encodeURIComponent(product.name)}`);
+      if (res && res.ok && Array.isArray(res.data) && res.data.length > 0) {
+        setCategorySuggestions(res.data);
+        setSelectedCategoryId(res.data[0].category_id || '');
       } else {
-        // Fallback default MLA category if none predicted
-        setSelectedCategoryId('MLA373740'); // Generic spare parts or appliances
+        setSelectedCategoryId('MLA373740');
       }
     } catch (err) {
       console.warn('Prediction error:', err);
@@ -144,19 +157,15 @@ export default function MercadoLibrePanel() {
     setMessage(null);
 
     try {
-      const res = await fetch(`/api/mercadolibre/publish/${encodeURIComponent(prodId)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          categoryId: selectedCategoryId || undefined,
-          listingTypeId: 'gold_special'
-        })
+      const res = await tryBackendJsonPost(`/api/mercadolibre/publish/${encodeURIComponent(prodId)}`, {
+        categoryId: selectedCategoryId || undefined,
+        listingTypeId: 'gold_special'
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'No se pudo publicar el repuesto.');
+      if (!res) throw new Error('Publicar directo en Mercado Libre requiere servidor Node.js activo.');
+      if (!res.ok) throw new Error(res.data?.error || 'No se pudo publicar el repuesto.');
 
       setMessage({
-        text: `¡${predictingProduct.name} fue publicado en Mercado Libre con éxito! (${data?.item?.id || ''})`,
+        text: `¡${predictingProduct.name} fue publicado en Mercado Libre con éxito! (${res.data?.item?.id || ''})`,
         type: 'ok'
       });
       setPredictingProduct(null);
@@ -172,9 +181,9 @@ export default function MercadoLibrePanel() {
     setBusy(`sync:${product.id}`);
     setMessage(null);
     try {
-      const res = await fetch(`/api/mercadolibre/sync/${encodeURIComponent(product.id)}`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'No se pudo sincronizar el producto.');
+      const res = await tryBackendJsonPost(`/api/mercadolibre/sync/${encodeURIComponent(product.id)}`, {});
+      if (!res) throw new Error('La sincronización API con Mercado Libre requiere servidor Node.js activo.');
+      if (!res.ok) throw new Error(res.data?.error || 'No se pudo sincronizar el producto.');
       setMessage({ text: `Publicación ${product.name} sincronizada con Mercado Libre.`, type: 'ok' });
       await loadData();
     } catch (e: any) {
@@ -359,8 +368,20 @@ export default function MercadoLibrePanel() {
         )}
       </div>
 
-      {/* Configuration Status Notice when not configured or needs credentials */}
-      {!status.configured && (
+      {/* Configuration Status Notice when not configured or hosted on static Cloudflare Pages */}
+      {staticHostingOnly ? (
+        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6 text-slate-800">
+          <div className="flex items-start gap-3">
+            <Info className="w-5 h-5 text-[#29ABE2] shrink-0 mt-0.5" />
+            <div className="space-y-1.5 flex-1">
+              <h4 className="font-black text-base text-slate-900">Hosting estático en Cloudflare Pages detectado</h4>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Tu catálogo web, stock y panel de administración funcionan 100% gratis conectados directo a <strong>Firebase Firestore</strong>. Como Mercado Libre exige guardar una clave secreta (<code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold border">ML_CLIENT_SECRET</code>) en un servidor privado Node.js, la sincronización automática de ML sólo se habilita si conectás un backend o Worker con esa clave. Mientras tanto, podés usar el botón <strong>"Publicar en Redes"</strong> en cada producto del catálogo para generar flyers y compartir al instante.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : !status.configured && (
         <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-6 text-amber-950">
           <div className="flex items-start gap-3">
             <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />

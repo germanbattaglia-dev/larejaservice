@@ -5,6 +5,7 @@ import { Product } from '../types';
 import { useFavorites } from '../lib/wishlistStorage';
 import { cn } from '../lib/utils';
 import SocialPostModal from '../components/admin/SocialPostModal';
+import { fetchProductByIdDirect, createWebOrderDirect } from '../lib/firestoreStore';
 
 export default function ProductDetail() {
   const { id } = useParams();
@@ -32,20 +33,31 @@ export default function ProductDetail() {
     typeof window !== 'undefined' &&
     (localStorage.getItem('admin_auth') === 'true' || sessionStorage.getItem('admin_auth') === 'true');
 
+  const [orderError, setOrderError] = useState('');
+
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
     setLoading(true);
     setActiveImageIndex(0);
-    fetch(`/api/products/${id}?t=` + Date.now())
-      .then(res => res.json())
+    if (!id) {
+      setProduct(null);
+      setLoading(false);
+      return;
+    }
+    fetchProductByIdDirect(id)
       .then(data => {
         setProduct(data);
         setLoading(false);
         requestAnimationFrame(() => {
           window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
         });
+      })
+      .catch(err => {
+        console.error('Error loading product detail:', err);
+        setProduct(null);
+        setLoading(false);
       });
   }, [id]);
 
@@ -54,21 +66,22 @@ export default function ProductDetail() {
     if (!product || !customerName || !customerPhone) return;
     
     setIsSubmitting(true);
-    // Create order
-    const res = await fetch('/api/orders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    setOrderError('');
+    try {
+      const order = await createWebOrderDirect({
         total: product.price,
         items: [{ productId: product.id, quantity: 1, name: product.name }],
-        customer: { name: customerName, phone: customerPhone }
-      })
-    });
-    const order = await res.json();
-    setOrderId(order.id);
-    setIsSubmitting(false);
-    setShowCheckout(false);
-    setPurchased(true);
+        customer: { name: customerName, phone: customerPhone },
+        shippingMethod: deliveryMethod
+      });
+      setOrderId(order.id);
+      setShowCheckout(false);
+      setPurchased(true);
+    } catch (err: any) {
+      setOrderError(err?.message || 'No se pudo registrar el pedido. Verificá el stock e intentá nuevamente.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCopyAlias = () => {
@@ -398,6 +411,12 @@ export default function ProductDetail() {
                     </label>
                   </div>
                 </div>
+
+                {orderError && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-xl">
+                    {orderError}
+                  </div>
+                )}
 
                 <button 
                   type="submit"

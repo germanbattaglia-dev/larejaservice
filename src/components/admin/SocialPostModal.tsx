@@ -198,7 +198,7 @@ export default function SocialPostModal({ product, onClose }: SocialPostModalPro
 
   const activeImageSrc = allImages[selectedImageIdx] || '';
 
-  // Load active image in CORS-safe mode (via /api/proxy-image for external http(s) URLs)
+  // Load active image safely for canvas (works both on static Cloudflare Pages and Node backend)
   useEffect(() => {
     if (!activeImageSrc) {
       setLoadedImageEl(null);
@@ -207,32 +207,80 @@ export default function SocialPostModal({ product, onClose }: SocialPostModalPro
     }
 
     let cancelled = false;
+    let objectUrlToRevoke: string | null = null;
     setImageLoadStatus('loading');
 
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-
     const isExternal = /^https?:\/\//i.test(activeImageSrc) && !activeImageSrc.startsWith(window.location.origin);
-    const resolvedSrc = isExternal
-      ? `/api/proxy-image?url=${encodeURIComponent(activeImageSrc)}`
-      : activeImageSrc;
 
-    img.onload = () => {
-      if (!cancelled) {
-        setLoadedImageEl(img);
-        setImageLoadStatus('ok');
+    const loadImg = (src: string, useCors: boolean): Promise<HTMLImageElement> =>
+      new Promise((resolve, reject) => {
+        const image = new Image();
+        if (useCors) image.crossOrigin = 'anonymous';
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error('Image load failed'));
+        image.src = src;
+      });
+
+    (async () => {
+      try {
+        if (!isExternal) {
+          const img = await loadImg(activeImageSrc, false);
+          if (!cancelled) {
+            setLoadedImageEl(img);
+            setImageLoadStatus('ok');
+          }
+          return;
+        }
+
+        // 1. Try direct CORS load (works on Unsplash, Firebase Storage, CORS-enabled CDNs)
+        try {
+          const img = await loadImg(activeImageSrc, true);
+          if (!cancelled) {
+            setLoadedImageEl(img);
+            setImageLoadStatus('ok');
+          }
+          return;
+        } catch {
+          // continue to proxy check
+        }
+
+        // 2. Try backend /api/proxy-image only if it returns a genuine image content-type
+        try {
+          const proxyRes = await fetch(`/api/proxy-image?url=${encodeURIComponent(activeImageSrc)}`);
+          const ct = proxyRes.headers.get('content-type') || '';
+          if (proxyRes.ok && ct.toLowerCase().startsWith('image/')) {
+            const blob = await proxyRes.blob();
+            objectUrlToRevoke = URL.createObjectURL(blob);
+            const img = await loadImg(objectUrlToRevoke, false);
+            if (!cancelled) {
+              setLoadedImageEl(img);
+              setImageLoadStatus('ok');
+            }
+            return;
+          }
+        } catch {
+          // continue to non-CORS preview fallback
+        }
+
+        // 3. Fallback without CORS so at least the preview shows the photo
+        const fallbackImg = await loadImg(activeImageSrc, false);
+        if (!cancelled) {
+          setLoadedImageEl(fallbackImg);
+          setImageLoadStatus('ok');
+        }
+      } catch {
+        if (!cancelled) {
+          setLoadedImageEl(null);
+          setImageLoadStatus('error');
+        }
       }
-    };
-    img.onerror = () => {
-      if (!cancelled) {
-        setLoadedImageEl(null);
-        setImageLoadStatus('error');
-      }
-    };
-    img.src = resolvedSrc;
+    })();
 
     return () => {
       cancelled = true;
+      if (objectUrlToRevoke) {
+        URL.revokeObjectURL(objectUrlToRevoke);
+      }
     };
   }, [activeImageSrc]);
 

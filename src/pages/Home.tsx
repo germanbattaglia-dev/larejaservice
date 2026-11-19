@@ -11,6 +11,7 @@ import {
   mergeServerAndLocalProducts, 
   normalizeText 
 } from '../lib/productsStorage';
+import { fetchProductsDirect, fetchUnifiedCategoriesDirect } from '../lib/firestoreStore';
 
 export default function Home() {
   const { isFavorite, toggleFavorite } = useFavorites();
@@ -26,8 +27,8 @@ export default function Home() {
 
   const loadHomeData = () => {
     Promise.all([
-      fetch('/api/products?t=' + Date.now()).then(res => res.json()).catch(() => []),
-      fetch('/api/categories?t=' + Date.now()).then(res => res.json()).catch(() => [])
+      fetchProductsDirect().catch(() => []),
+      fetchUnifiedCategoriesDirect().catch(() => [])
     ]).then(([productsData, categoriesData]) => {
       const raw = Array.isArray(productsData) ? productsData : [];
       const consolidated = mergeServerAndLocalProducts(raw);

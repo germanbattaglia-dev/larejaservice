@@ -9,6 +9,7 @@ import {
   mergeServerAndLocalProducts, 
   normalizeText 
 } from '../lib/productsStorage';
+import { fetchProductsDirect } from '../lib/firestoreStore';
 
 export default function Refurbished() {
   const [products, setProducts] = useState<Product[]>(() => {
@@ -28,8 +29,7 @@ export default function Refurbished() {
   }, []);
 
   const loadRefurbishedData = () => {
-    fetch('/api/products?t=' + Date.now())
-      .then(res => res.json())
+    fetchProductsDirect()
       .then(data => {
         const raw = Array.isArray(data) ? data : [];
         const consolidated = mergeServerAndLocalProducts(raw);

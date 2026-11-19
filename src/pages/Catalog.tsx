@@ -10,6 +10,7 @@ import {
   normalizeText, 
   getProductTimestamp 
 } from '../lib/productsStorage';
+import { fetchProductsDirect, fetchUnifiedCategoriesDirect } from '../lib/firestoreStore';
 
 // Helper to generate up to 15 page numbers with smart ellipsis windowing
 function getPageNumbers(current: number, total: number): (number | string)[] {
@@ -168,10 +169,9 @@ export default function Catalog() {
 
   const loadCatalogData = () => {
     Promise.all([
-      fetch('/api/products?t=' + Date.now()).then(res => res.json()).catch(() => []),
-      fetch('/api/categories?t=' + Date.now()).then(res => res.json()).catch(() => []),
-      fetch('/api/brands?t=' + Date.now()).then(res => res.json()).catch(() => [])
-    ]).then(([productsData, categoriesData, brandsData]) => {
+      fetchProductsDirect().catch(() => []),
+      fetchUnifiedCategoriesDirect().catch(() => [])
+    ]).then(([productsData, categoriesData]) => {
       const rawProds = Array.isArray(productsData) ? productsData : [];
       const consolidated = mergeServerAndLocalProducts(rawProds);
       setProducts(consolidated);

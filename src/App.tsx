@@ -24,6 +24,7 @@ export default function App() {
           <Route path="/reacondicionados" element={<Refurbished />} />
           <Route path="/reparaciones" element={<RepairRequest />} />
           <Route path="/seguimiento" element={<Tracking />} />
+          <Route path="/tracking" element={<Tracking />} />
           <Route path="/admin" element={<Admin />} />
         </Routes>
       </Layout>

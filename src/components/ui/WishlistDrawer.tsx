@@ -4,6 +4,7 @@ import { Heart, X, Trash2, ShoppingCart, MessageCircle, ArrowRight, ExternalLink
 import { useFavorites } from '../../lib/wishlistStorage';
 import { Product } from '../../types';
 import { getLocalStoredProducts, mergeServerAndLocalProducts } from '../../lib/productsStorage';
+import { fetchProductsDirect } from '../../lib/firestoreStore';
 
 interface WishlistDrawerProps {
   isOpen: boolean;
@@ -19,8 +20,7 @@ export function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps) {
     if (!isOpen) return;
 
     setLoading(true);
-    fetch('/api/products?t=' + Date.now())
-      .then(res => res.json())
+    fetchProductsDirect()
       .then(serverProducts => {
         const raw = Array.isArray(serverProducts) ? serverProducts : [];
         const consolidated = mergeServerAndLocalProducts(raw);

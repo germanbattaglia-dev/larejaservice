@@ -1,3 +1,11 @@
+import {
+  fetchUnifiedCategoriesDirect,
+  addUnifiedCategoryDirect,
+  renameUnifiedCategoryDirect,
+  deleteUnifiedCategoryDirect,
+  resetUnifiedCategoriesDirect,
+} from './firestoreStore';
+
 export function sortAlphabetically(cats: string[]): string[] {
   return [...cats].sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
 }
@@ -66,75 +74,41 @@ export function saveApplianceCategoriesLocal(categories: string[]): void {
 
 export async function fetchApplianceCategoriesApi(): Promise<string[]> {
   try {
-    const res = await fetch('/api/categories?t=' + Date.now());
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        const sorted = sortCategoriesWithOtroAtEnd(data);
-        saveApplianceCategoriesLocal(sorted);
-        return sorted;
-      }
+    const data = await fetchUnifiedCategoriesDirect();
+    if (Array.isArray(data) && data.length > 0) {
+      const sorted = sortCategoriesWithOtroAtEnd(data);
+      saveApplianceCategoriesLocal(sorted);
+      return sorted;
     }
   } catch (err) {
-    console.error('Error fetching appliance categories API:', err);
+    console.error('Error fetching appliance categories from Firestore:', err);
   }
   return getApplianceCategoriesSync();
 }
 
 export async function addApplianceCategoryApi(name: string): Promise<string[]> {
-  const res = await fetch('/api/categories', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name })
-  });
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error || 'Error al agregar categoría');
-  }
-  const data = await res.json();
+  const data = await addUnifiedCategoryDirect(name);
   const sorted = sortCategoriesWithOtroAtEnd(data);
   saveApplianceCategoriesLocal(sorted);
   return sorted;
 }
 
 export async function updateApplianceCategoryApi(oldName: string, newName: string): Promise<string[]> {
-  const res = await fetch(`/api/categories/${encodeURIComponent(oldName)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ newName })
-  });
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error || 'Error al actualizar categoría');
-  }
-  const data = await res.json();
+  const data = await renameUnifiedCategoryDirect(oldName, newName);
   const sorted = sortCategoriesWithOtroAtEnd(data);
   saveApplianceCategoriesLocal(sorted);
   return sorted;
 }
 
 export async function deleteApplianceCategoryApi(name: string): Promise<string[]> {
-  const res = await fetch(`/api/categories/${encodeURIComponent(name)}`, {
-    method: 'DELETE'
-  });
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error || 'Error al eliminar categoría');
-  }
-  const data = await res.json();
+  const data = await deleteUnifiedCategoryDirect(name);
   const sorted = sortCategoriesWithOtroAtEnd(data);
   saveApplianceCategoriesLocal(sorted);
   return sorted;
 }
 
 export async function resetApplianceCategoriesApi(): Promise<string[]> {
-  const res = await fetch('/api/categories/reset', {
-    method: 'POST'
-  });
-  if (!res.ok) {
-    throw new Error('Error al restablecer categorías');
-  }
-  const data = await res.json();
+  const data = await resetUnifiedCategoriesDirect();
   const sorted = sortCategoriesWithOtroAtEnd(data);
   saveApplianceCategoriesLocal(sorted);
   return sorted;

@@ -1,23 +1,13 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
-  getAuth, 
   signInWithPopup, 
   GoogleAuthProvider, 
   onAuthStateChanged, 
   signOut,
-  setPersistence,
-  browserLocalPersistence,
   User 
 } from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+import { auth } from './firebaseApp';
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-export const auth = getAuth(app);
-
-// Keep Firebase Auth user session persisted in IndexedDB across browser/PC restarts
-setPersistence(auth, browserLocalPersistence).catch((err) => {
-  console.warn('No se pudo configurar persistencia local de Firebase Auth:', err);
-});
+export { auth };
 
 export const GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.modify'

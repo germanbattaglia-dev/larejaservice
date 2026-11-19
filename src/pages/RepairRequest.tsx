@@ -3,6 +3,7 @@ import { Wrench, CheckCircle, Store, Truck, MapPin, Info, MessageCircle, Mail, C
 import { useNavigate } from 'react-router-dom';
 import { fetchApplianceCategoriesApi, getApplianceCategoriesSync } from '../lib/categories';
 import { cn } from '../lib/utils';
+import { createRepairDirect } from '../lib/firestoreStore';
 
 interface FormErrors {
   name?: string;
@@ -212,40 +213,35 @@ export default function RepairRequest() {
       : formData.applianceType;
 
     try {
-      const res = await fetch('/api/repairs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customer: {
-            name: formData.name.trim(),
-            phone: formData.phone.trim(),
-            email: formData.email.trim(),
-            address: formData.address.trim(),
-            hasWhatsapp: formData.hasWhatsapp,
-            contactMethod: formData.hasWhatsapp ? 'whatsapp' : formData.contactMethod,
-            whatsappClarification: formData.hasWhatsapp ? 'Tiene WhatsApp activo' : (formData.whatsappClarification.trim() || `Sin WhatsApp. Preferencia: ${formData.contactMethod === 'email' ? 'Email' : 'Llamada telefónica'}`)
-          },
+      const repair = await createRepairDirect({
+        customer: {
+          name: formData.name.trim(),
+          phone: formData.phone.trim(),
+          email: formData.email.trim(),
+          address: formData.address.trim(),
           hasWhatsapp: formData.hasWhatsapp,
           contactMethod: formData.hasWhatsapp ? 'whatsapp' : formData.contactMethod,
-          whatsappClarification: formData.hasWhatsapp ? 'Tiene WhatsApp activo' : (formData.whatsappClarification.trim() || `Sin WhatsApp. Preferencia: ${formData.contactMethod === 'email' ? 'Email' : 'Llamada telefónica'}`),
-          address: formData.address.trim(),
-          applianceType: finalApplianceType,
-          brandModel: formData.brandModel.trim(),
-          problem: formData.problem.trim(),
-          serviceType: formData.serviceType || 'pickup',
-          source: 'web',
-          pickupNotes: formData.serviceType === 'local'
-            ? 'Cliente llevará el equipo al local'
-            : `Solicita retiro a domicilio (${formData.address.trim()}). ${!formData.hasWhatsapp ? `[Sin WhatsApp: coordinar por ${formData.contactMethod === 'email' ? 'Email' : 'Llamada'}${formData.whatsappClarification ? ` - ${formData.whatsappClarification}` : ''}]` : ''}`
-        })
+          whatsappClarification: formData.hasWhatsapp ? 'Tiene WhatsApp activo' : (formData.whatsappClarification.trim() || `Sin WhatsApp. Preferencia: ${formData.contactMethod === 'email' ? 'Email' : 'Llamada telefónica'}`)
+        },
+        hasWhatsapp: formData.hasWhatsapp,
+        contactMethod: formData.hasWhatsapp ? 'whatsapp' : formData.contactMethod,
+        whatsappClarification: formData.hasWhatsapp ? 'Tiene WhatsApp activo' : (formData.whatsappClarification.trim() || `Sin WhatsApp. Preferencia: ${formData.contactMethod === 'email' ? 'Email' : 'Llamada telefónica'}`),
+        address: formData.address.trim(),
+        applianceType: finalApplianceType,
+        brandModel: formData.brandModel.trim(),
+        problem: formData.problem.trim(),
+        serviceType: formData.serviceType || 'pickup',
+        source: 'web',
+        pickupNotes: formData.serviceType === 'local'
+          ? 'Cliente llevará el equipo al local'
+          : `Solicita retiro a domicilio (${formData.address.trim()}). ${!formData.hasWhatsapp ? `[Sin WhatsApp: coordinar por ${formData.contactMethod === 'email' ? 'Email' : 'Llamada'}${formData.whatsappClarification ? ` - ${formData.whatsappClarification}` : ''}]` : ''}`
       });
-      
-      const repair = await res.json();
+
       setTrackingId(repair.id || 'REP-PENDIENTE');
       setSubmitted(true);
     } catch (err) {
       console.error('Error submitting repair:', err);
-      alert('Ocurrió un error al enviar la solicitud. Por favor reintentá o comunicate por WhatsApp.');
+      setHasSubmitAttempt(true);
     } finally {
       setLoading(false);
     }

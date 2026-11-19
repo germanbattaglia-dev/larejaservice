@@ -26,6 +26,34 @@ import {
   LOCAL_STORAGE_PRODUCTS_KEY,
   LOCAL_STORAGE_DELETED_KEY
 } from '../lib/productsStorage';
+import {
+  fetchProductsDirect,
+  createProductDirect,
+  updateProductDirect,
+  deleteProductDirect,
+  deduplicateProductsDirect,
+  fetchUnifiedCategoriesDirect,
+  addUnifiedCategoryDirect,
+  renameUnifiedCategoryDirect,
+  deleteUnifiedCategoryDirect,
+  resetUnifiedCategoriesDirect,
+  fetchQuickBrandsDirect,
+  addQuickBrandDirect,
+  deleteQuickBrandDirect,
+  resetQuickBrandsDirect,
+  fetchRepairsDirect,
+  createRepairDirect,
+  updateRepairDirect,
+  updateRepairStatusDirect,
+  deleteRepairDirect,
+  getAdminStatsDirect,
+  createPosSaleDirect,
+  getRepairsIntegrationDirect,
+  saveRepairsIntegrationDirect,
+  testRepairWebhookDirect,
+  printRepairVoucherDirect,
+  tryBackendJsonPost,
+} from '../lib/firestoreStore';
 
 function pruneDeletedProductIds(currentServerIds: Set<string>) {
   try {
@@ -83,13 +111,11 @@ export default function Admin() {
   const [webhookMessage, setWebhookMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   const handlePrintRepair = (repairId: string) => {
-    const printUrl = `/api/repairs/${encodeURIComponent(repairId)}/print`;
-    const w = window.open(printUrl, '_blank', 'width=850,height=900,scrollbars=yes');
-    if (w) {
-      w.focus();
-    } else {
-      window.location.href = printUrl;
-    }
+    const targetRepair = repairs.find(r => r.id === repairId);
+    if (!targetRepair) return;
+    printRepairVoucherDirect(targetRepair).catch(err => {
+      console.warn('Error printing repair voucher:', err);
+    });
     setRepairs(prev => prev.map(r => r.id === repairId ? { ...r, printed: true, printedAt: new Date().toISOString() } : r));
   };
 
@@ -336,21 +362,6 @@ export default function Admin() {
     setPasswordInput('');
   };
 
-  const safeFetchJson = async (url: string, fallback: any, timeoutMs = 15000) => {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      const res = await fetch(url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(), { signal: controller.signal });
-      clearTimeout(timer);
-      if (!res.ok) return fallback;
-      const data = await res.json();
-      return data !== null && data !== undefined ? data : fallback;
-    } catch (err) {
-      console.warn(`Fetch to ${url} fallback used:`, err);
-      return fallback;
-    }
-  };
-
   const fetchData = async (showLoadingSpinner = false) => {
     if (showLoadingSpinner) setLoading(true);
     else setIsRefreshing(true);
@@ -358,11 +369,11 @@ export default function Admin() {
 
     try {
       const [statsData, repairsData, categoriesData, productsData, brandsData] = await Promise.all([
-        safeFetchJson('/api/admin/stats', { totalOrders: 0, totalRepairs: 0, revenue: 0, activeRepairs: 0 }),
-        safeFetchJson('/api/admin/repairs', []),
-        safeFetchJson('/api/categories', []),
-        safeFetchJson('/api/products?t=' + Date.now(), []),
-        safeFetchJson('/api/brands', [])
+        getAdminStatsDirect().catch(() => ({ totalOrders: 0, totalRepairs: 0, revenue: 0, activeRepairs: 0 })),
+        fetchRepairsDirect().catch(() => []),
+        fetchUnifiedCategoriesDirect().catch(() => []),
+        fetchProductsDirect().catch(() => getLocalStoredProducts()),
+        fetchQuickBrandsDirect().catch(() => [])
       ]);
       
       setStats({
@@ -380,19 +391,19 @@ export default function Admin() {
         setCategories(sortedCats);
         setApplianceCategories(sortedCats);
       }
-      if (Array.isArray(productsData) && productsData.length > 0) {
+      if (Array.isArray(productsData)) {
         const consolidated = mergeServerAndLocalProducts(productsData);
         setProducts(consolidated);
       }
       if (Array.isArray(brandsData)) setQuickBrands(brandsData);
 
       // Load webhook settings for external repair app
-      safeFetchJson('/api/integrations/repairs', null).then(intData => {
+      getRepairsIntegrationDirect().then(intData => {
         if (intData) {
           if (typeof intData.webhookUrl === 'string') setWebhookUrl(intData.webhookUrl);
           if (typeof intData.enabled === 'boolean') setWebhookEnabled(intData.enabled);
         }
-      });
+      }).catch(() => {});
     } catch (err) {
       console.error('Error general al cargar datos de admin:', err);
       setFetchError('Se cargaron los datos disponibles. Si faltan datos, podés presionar "Actualizar".');
@@ -407,18 +418,10 @@ export default function Admin() {
     setWebhookLoading(true);
     setWebhookMessage(null);
     try {
-      const res = await fetch('/api/integrations/repairs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ webhookUrl, enabled: webhookEnabled })
-      });
-      if (res.ok) {
-        setWebhookMessage({ text: 'Configuración guardada. Tu otra app recibirá las órdenes en tiempo real.', type: 'success' });
-      } else {
-        setWebhookMessage({ text: 'Error al guardar la configuración.', type: 'error' });
-      }
+      await saveRepairsIntegrationDirect(webhookUrl, webhookEnabled);
+      setWebhookMessage({ text: 'Configuración guardada en la nube. Tu otra app recibirá las órdenes en tiempo real.', type: 'success' });
     } catch {
-      setWebhookMessage({ text: 'Error de red al guardar la configuración.', type: 'error' });
+      setWebhookMessage({ text: 'Error al guardar la configuración en Firebase.', type: 'error' });
     } finally {
       setWebhookLoading(false);
     }
@@ -432,13 +435,8 @@ export default function Admin() {
     setWebhookTesting(true);
     setWebhookMessage(null);
     try {
-      const res = await fetch('/api/integrations/repairs/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ webhookUrl })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = await testRepairWebhookDirect(webhookUrl);
+      if (data.success) {
         setWebhookMessage({ text: `¡Conexión exitosa! Tu otra app respondió correctamente (HTTP ${data.status}).`, type: 'success' });
       } else {
         setWebhookMessage({ text: `No se pudo conectar: ${data.error || 'La otra app no respondió.'}`, type: 'error' });
@@ -504,34 +502,21 @@ export default function Admin() {
     e.preventDefault();
     if (!newBrandInput.trim()) return;
     try {
-      const res = await fetch('/api/brands', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newBrandInput.trim() })
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        alert(err.error || 'Error al agregar marca');
-        return;
-      }
-      const data = await res.json();
+      const data = await addQuickBrandDirect(newBrandInput.trim());
       setQuickBrands(data);
       setNewBrandInput('');
-    } catch (e: any) {
-      alert('Error de red al agregar marca');
+    } catch (err: any) {
+      alert(err?.message || 'Error al agregar marca');
     }
   };
 
   const handleDeleteBrand = async (brandName: string) => {
     if (safeConfirm(`¿Eliminar "${brandName}" de los accesos rápidos por marca?`)) {
       try {
-        const res = await fetch(`/api/brands/${encodeURIComponent(brandName)}`, { method: 'DELETE' });
-        if (res.ok) {
-          const data = await res.json();
-          setQuickBrands(data);
-        }
-      } catch (e) {
-        alert('Error al eliminar marca');
+        const data = await deleteQuickBrandDirect(brandName);
+        setQuickBrands(data);
+      } catch (err: any) {
+        alert(err?.message || 'Error al eliminar marca');
       }
     }
   };
@@ -539,13 +524,10 @@ export default function Admin() {
   const handleResetBrands = async () => {
     if (safeConfirm('¿Restablecer marcas principales por defecto?')) {
       try {
-        const res = await fetch('/api/brands/reset', { method: 'POST' });
-        if (res.ok) {
-          const data = await res.json();
-          setQuickBrands(data);
-        }
-      } catch (e) {
-        alert('Error al restablecer marcas');
+        const data = await resetQuickBrandsDirect();
+        setQuickBrands(data);
+      } catch (err: any) {
+        alert(err?.message || 'Error al restablecer marcas');
       }
     }
   };
@@ -562,11 +544,7 @@ export default function Admin() {
     // Optimistic UI update
     setRepairs(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r));
     try {
-      await fetch(`/api/admin/repairs/${id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
-      });
+      await updateRepairStatusDirect(id, newStatus);
     } catch (e) {
       console.error('Error updating repair status:', e);
     }
@@ -633,17 +611,9 @@ export default function Admin() {
 
     try {
       if (wasSelectedPickupId) {
-        await fetch(`/api/repairs/${encodeURIComponent(wasSelectedPickupId)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(repairPayload)
-        });
+        await updateRepairDirect(wasSelectedPickupId, repairPayload);
       } else {
-        await fetch('/api/repairs', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(repairPayload)
-        });
+        await createRepairDirect(repairPayload);
       }
     } catch (err) {
       console.error('Error saving new repair:', err);
@@ -667,11 +637,7 @@ export default function Admin() {
     setEditingRepair(null);
 
     try {
-      await fetch(`/api/repairs/${targetId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated)
-      });
+      await updateRepairDirect(targetId, updated);
     } catch (err) {
       console.error('Error updating repair:', err);
     }
@@ -689,18 +655,8 @@ export default function Admin() {
     setProducts(prev => prev.map(p => p.id === prod.id ? { ...p, isFeatured: newStatus } : p));
 
     try {
-      const res = await fetch(`/api/products/${prod.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isFeatured: newStatus })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setProducts(prev => prev.map(p => p.id === prod.id ? { ...p, ...data, isFeatured: newStatus } : p));
-      } else {
-        // Revert on failure
-        setProducts(prev => prev.map(p => p.id === prod.id ? { ...p, isFeatured: currentStatus } : p));
-      }
+      const data = await updateProductDirect(prod.id, { isFeatured: newStatus });
+      setProducts(prev => prev.map(p => p.id === prod.id ? { ...p, ...data, isFeatured: newStatus } : p));
     } catch (err) {
       setProducts(prev => prev.map(p => p.id === prod.id ? { ...p, isFeatured: currentStatus } : p));
     }
@@ -944,9 +900,6 @@ export default function Admin() {
     setProdMessage(null);
 
     try {
-      const url = editingProductId ? `/api/products/${editingProductId}` : '/api/products';
-      const method = editingProductId ? 'PUT' : 'POST';
-
       // Auto-include any pending image URL typed in the input box
       let imageList = [...(productForm.images || [])];
       if (imageUrlInput && imageUrlInput.trim()) {
@@ -991,26 +944,10 @@ export default function Admin() {
         applianceType: productForm.applianceType?.trim() || (isRefurb ? finalCategoryVal : '')
       };
 
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      
-      let data: any = null;
-      try {
-        data = await res.json();
-      } catch (jsonErr) {
-        console.warn('Response was not JSON:', jsonErr);
-      }
-      
-      if (!res.ok) {
-        const errorText = (data && data.error) ? data.error : `Error en el servidor al guardar (Código ${res.status})`;
-        setProdMessage({ text: errorText, type: 'error' });
-        return;
-      }
+      const savedProduct = editingProductId
+        ? await updateProductDirect(editingProductId, payload)
+        : await createProductDirect(payload);
 
-      const savedProduct = (data && data.id) ? data : { ...payload, id: String(Date.now()), createdAt: Date.now() };
       const savedName = savedProduct.name || nameVal;
       
       // Immediate local state update at the very top of products list
@@ -1030,8 +967,8 @@ export default function Admin() {
 
       setProdMessage({ 
         text: editingProductId 
-          ? `✅ ¡Repuesto "${savedName}" actualizado en la categoría "${categoryVal}"!` 
-          : `✅ ¡Repuesto "${savedName}" cargado con éxito en la categoría "${categoryVal}"! Ya está disponible en el catálogo.`, 
+          ? `✅ ¡Repuesto "${savedName}" actualizado en "${finalCategoryVal}"!` 
+          : `✅ ¡Repuesto "${savedName}" cargado con éxito en "${finalCategoryVal}"! Ya está visible en tu página.`, 
         type: 'success' 
       });
 
@@ -1042,7 +979,7 @@ export default function Admin() {
       }, 400);
     } catch (err: any) {
       console.error('Error al guardar repuesto:', err);
-      setProdMessage({ text: 'Error de red o conexión: ' + (err.message || 'Verifique la conexión al servidor'), type: 'error' });
+      setProdMessage({ text: 'Error al guardar en Firebase: ' + (err.message || 'Verifique su conexión a internet'), type: 'error' });
     } finally {
       setIsSavingProduct(false);
       setTimeout(() => {
@@ -1054,16 +991,9 @@ export default function Admin() {
   const handleQuickStockAdjust = async (product: any, delta: number) => {
     const newStock = Math.max(0, (Number(product.stock) || 0) + delta);
     try {
-      const res = await fetch(`/api/products/${product.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stock: newStock })
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setProducts(prev => prev.map(p => p.id === product.id ? { ...p, stock: newStock } : p));
-        notifyProductsUpdated();
-      }
+      await updateProductDirect(product.id, { stock: newStock });
+      setProducts(prev => prev.map(p => p.id === product.id ? { ...p, stock: newStock } : p));
+      notifyProductsUpdated();
     } catch (err) {
       console.warn('Error adjusting stock:', err);
     }
@@ -1077,24 +1007,18 @@ export default function Admin() {
 
     setSavingPriceId(productId);
     try {
-      const res = await fetch(`/api/products/${productId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ price: cleanPrice })
+      await updateProductDirect(productId, { price: cleanPrice });
+      setProducts(prev => prev.map(p => p.id === productId ? { ...p, price: cleanPrice } : p));
+      setEditingPrices(prev => {
+        const next = { ...prev };
+        delete next[productId];
+        return next;
       });
-      if (res.ok) {
-        setProducts(prev => prev.map(p => p.id === productId ? { ...p, price: cleanPrice } : p));
-        setEditingPrices(prev => {
-          const next = { ...prev };
-          delete next[productId];
-          return next;
-        });
-        setSavedPriceId(productId);
-        notifyProductsUpdated();
-        setTimeout(() => {
-          setSavedPriceId(prev => prev === productId ? null : prev);
-        }, 2000);
-      }
+      setSavedPriceId(productId);
+      notifyProductsUpdated();
+      setTimeout(() => {
+        setSavedPriceId(prev => prev === productId ? null : prev);
+      }, 2000);
     } catch (err) {
       console.warn('Error updating price directly:', err);
     } finally {
@@ -1182,53 +1106,42 @@ export default function Admin() {
     const total = itemsPayload.reduce((sum, i) => sum + (i.price * i.quantity), 0);
 
     try {
-      const res = await fetch('/api/pos/sale', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: itemsPayload,
-          paymentMethod: posPaymentMethod,
-          customerName: posCustomerName.trim() || 'Consumidor Final',
-          total
-        })
+      const data = await createPosSaleDirect({
+        items: itemsPayload,
+        paymentMethod: posPaymentMethod,
+        customerName: posCustomerName.trim() || 'Consumidor Final',
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setPosMessage({ text: data.error || 'Error al procesar la venta', type: 'error' });
-      } else {
-        // Detect items that reached or are below minStock
-        const criticalItems = itemsPayload.filter(i => i.remainingStock <= i.minStock);
+      const criticalItems = itemsPayload.filter(i => i.remainingStock <= i.minStock);
 
-        setPosSuccessModal({
-          saleId: data.id || `POS-${Math.floor(1000 + Math.random() * 9000)}`,
-          date: new Date().toLocaleString('es-AR'),
-          items: itemsPayload,
-          total,
-          paymentMethod: posPaymentMethod,
-          customerName: posCustomerName.trim() || 'Consumidor Final',
-          cashPaid: posCashPaid ? Number(posCashPaid) : null,
-          change: posCashPaid && Number(posCashPaid) > total ? Number(posCashPaid) - total : 0,
-          criticalItems
-        });
+      setPosSuccessModal({
+        saleId: data.id || `POS-${Math.floor(1000 + Math.random() * 9000)}`,
+        date: new Date().toLocaleString('es-AR'),
+        items: itemsPayload,
+        total,
+        paymentMethod: posPaymentMethod,
+        customerName: posCustomerName.trim() || 'Consumidor Final',
+        cashPaid: posCashPaid ? Number(posCashPaid) : null,
+        change: posCashPaid && Number(posCashPaid) > total ? Number(posCashPaid) - total : 0,
+        criticalItems
+      });
 
-        // Update local products stock
-        setProducts(prev => prev.map(p => {
-          const soldItem = itemsPayload.find(i => i.id === p.id);
-          if (soldItem) {
-            return { ...p, stock: Math.max(0, (Number(p.stock) || 0) - soldItem.quantity) };
-          }
-          return p;
-        }));
+      // Update local products stock
+      setProducts(prev => prev.map(p => {
+        const soldItem = itemsPayload.find(i => i.id === p.id);
+        if (soldItem) {
+          return { ...p, stock: Math.max(0, (Number(p.stock) || 0) - soldItem.quantity) };
+        }
+        return p;
+      }));
 
-        setPosCart([]);
-        setPosCustomerName('');
-        setPosCashPaid('');
-        setPosSearch('');
-        fetchData(false);
-      }
+      setPosCart([]);
+      setPosCustomerName('');
+      setPosCashPaid('');
+      setPosSearch('');
+      fetchData(false);
     } catch (err: any) {
-      setPosMessage({ text: 'Error de conexión: ' + (err.message || ''), type: 'error' });
+      setPosMessage({ text: 'Error al registrar venta en Firebase: ' + (err.message || ''), type: 'error' });
     } finally {
       setPosLoading(false);
     }
@@ -1270,27 +1183,27 @@ export default function Admin() {
     setTestEmailLoading(true);
     setTestEmailMessage(null);
     try {
-      const res = await fetch('/api/admin/test-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'Prueba de Sistema',
-          phone: '2926 40-5060',
-          email: 'larejacs@gmail.com',
-          address: 'Mitre 1234, Coronel Suárez',
-          applianceType: 'Lavarropas Automático',
-          brandModel: 'Drean Excellent 166',
-          problem: 'Equipo de prueba para verificar recepción de correo electrónico en larejacs@gmail.com'
-        })
+      const result = await tryBackendJsonPost('/api/admin/test-email', {
+        name: 'Prueba de Sistema',
+        phone: '2926 40-5060',
+        email: 'larejacs@gmail.com',
+        address: 'Mitre 1234, Coronel Suárez',
+        applianceType: 'Lavarropas Automático',
+        brandModel: 'Drean Excellent 166',
+        problem: 'Equipo de prueba para verificar recepción de correo electrónico en larejacs@gmail.com'
       });
-      const data = await res.json();
-      if (res.ok) {
+      if (!result) {
         setTestEmailMessage({
-          text: `¡Aviso procesado! Correo verificado para larejacs@gmail.com (${data.method === 'smtp' ? 'Enviado por SMTP' : 'Notificación registrada en servidor'}).`,
+          text: 'Estás usando Cloudflare Pages gratis (sin servidor SMTP Node.js). Los pedidos de retiro web se guardan directo en Firebase y aparecen al instante aquí en el panel.',
+          type: 'success'
+        });
+      } else if (result.ok) {
+        setTestEmailMessage({
+          text: `¡Aviso procesado! Correo verificado para larejacs@gmail.com (${result.data?.method === 'smtp' ? 'Enviado por SMTP' : 'Notificación registrada en servidor'}).`,
           type: 'success'
         });
       } else {
-        setTestEmailMessage({ text: data.error || 'Error al enviar email de prueba', type: 'error' });
+        setTestEmailMessage({ text: result.data?.error || 'Error al enviar email de prueba', type: 'error' });
       }
     } catch (err: any) {
       setTestEmailMessage({ text: 'Error de conexión: ' + (err?.message || ''), type: 'error' });
@@ -1303,12 +1216,8 @@ export default function Admin() {
   const handleDeleteRepair = async (id: string) => {
     if (!safeConfirm(`¿Seguro que querés eliminar la reparación "${id}"? Esta acción no se puede deshacer.`)) return;
     try {
-      const res = await fetch(`/api/admin/repairs/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setRepairs(prev => prev.filter(r => r.id !== id));
-      } else {
-        alert('Error al eliminar la reparación');
-      }
+      await deleteRepairDirect(id);
+      setRepairs(prev => prev.filter(r => r.id !== id));
     } catch (err) {
       console.error('Error deleting repair:', err);
       alert('Error al eliminar la reparación');
@@ -1328,18 +1237,14 @@ export default function Admin() {
     setProducts(prev => prev.filter(p => String(p.id) !== String(id)));
 
     try {
-      const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setProdMessage({ text: `✅ Repuesto "${name}" eliminado del catálogo`, type: 'success' });
-        notifyProductsUpdated();
-        const remaining = getLocalStoredProducts().filter(p => String(p.id) !== String(id));
-        saveLocalStoredProducts(remaining);
-      } else {
-        setProdMessage({ text: 'Error al eliminar el repuesto en el servidor', type: 'error' });
-      }
+      await deleteProductDirect(id);
+      setProdMessage({ text: `✅ Repuesto "${name}" eliminado del catálogo`, type: 'success' });
+      notifyProductsUpdated();
+      const remaining = getLocalStoredProducts().filter(p => String(p.id) !== String(id));
+      saveLocalStoredProducts(remaining);
     } catch (err) {
       console.error('Error deleting product:', err);
-      setProdMessage({ text: 'Error de conexión al eliminar repuesto', type: 'error' });
+      setProdMessage({ text: 'Error al eliminar el repuesto en Firebase', type: 'error' });
     } finally {
       setIsDeletingProduct(false);
       setProductToDelete(null);
@@ -1351,23 +1256,18 @@ export default function Admin() {
   const handleDeduplicateProducts = async () => {
     setIsDeduplicating(true);
     try {
-      const res = await fetch('/api/admin/products/deduplicate', { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        setProdMessage({ 
-          text: data.removedCount > 0 
-            ? `✅ Se depuraron ${data.removedCount} artículos duplicados exitosamente.` 
-            : '✅ No se encontraron duplicados. El catálogo está limpio.',
-          type: 'success'
-        });
-        notifyProductsUpdated();
-        fetchData();
-      } else {
-        setProdMessage({ text: 'Error al depurar duplicados', type: 'error' });
-      }
+      const data = await deduplicateProductsDirect();
+      setProdMessage({ 
+        text: data.removedCount > 0 
+          ? `✅ Se depuraron ${data.removedCount} artículos duplicados exitosamente.` 
+          : '✅ No se encontraron duplicados. El catálogo está limpio.',
+        type: 'success'
+      });
+      notifyProductsUpdated();
+      fetchData();
     } catch (err) {
       console.error('Error deduplicating products:', err);
-      setProdMessage({ text: 'Error de conexión al depurar duplicados', type: 'error' });
+      setProdMessage({ text: 'Error al depurar duplicados', type: 'error' });
     } finally {
       setIsDeduplicating(false);
       setTimeout(() => setProdMessage(null), 4000);
@@ -1380,25 +1280,16 @@ export default function Admin() {
     if (!newCategory.trim()) return;
 
     try {
-      const res = await fetch('/api/categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newCategory.trim() })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setCatMessage({ text: data.error || 'Error al agregar categoría', type: 'error' });
-      } else {
-        const sorted = Array.isArray(data)
-          ? [...data].filter(c => typeof c === 'string' && c.trim() && !c.toLowerCase().includes('otro')).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
-          : [];
-        setCategories(sorted);
-        setApplianceCategories(sorted);
-        setNewCategory('');
-        setCatMessage({ text: 'Categoría unificada agregada y ordenada de A-Z', type: 'success' });
-      }
-    } catch {
-      setCatMessage({ text: 'Error de conexión', type: 'error' });
+      const data = await addUnifiedCategoryDirect(newCategory.trim());
+      const sorted = Array.isArray(data)
+        ? [...data].filter(c => typeof c === 'string' && c.trim() && !c.toLowerCase().includes('otro')).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
+        : [];
+      setCategories(sorted);
+      setApplianceCategories(sorted);
+      setNewCategory('');
+      setCatMessage({ text: 'Categoría unificada agregada y ordenada de A-Z', type: 'success' });
+    } catch (err: any) {
+      setCatMessage({ text: err?.message || 'Error al agregar categoría', type: 'error' });
     }
     setTimeout(() => setCatMessage(null), 3500);
   };
@@ -1410,26 +1301,17 @@ export default function Admin() {
     }
 
     try {
-      const res = await fetch(`/api/categories/${encodeURIComponent(oldName)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newName: editValue.trim() })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setCatMessage({ text: data.error || 'Error al modificar categoría', type: 'error' });
-      } else {
-        const sorted = Array.isArray(data)
-          ? [...data].filter(c => typeof c === 'string' && c.trim() && !c.toLowerCase().includes('otro')).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
-          : [];
-        setCategories(sorted);
-        setApplianceCategories(sorted);
-        setEditingCategory(null);
-        setCatMessage({ text: 'Categoría modificada correctamente', type: 'success' });
-        fetchData(); // Refresh products to show updated category
-      }
-    } catch {
-      setCatMessage({ text: 'Error de conexión', type: 'error' });
+      const data = await renameUnifiedCategoryDirect(oldName, editValue.trim());
+      const sorted = Array.isArray(data)
+        ? [...data].filter(c => typeof c === 'string' && c.trim() && !c.toLowerCase().includes('otro')).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
+        : [];
+      setCategories(sorted);
+      setApplianceCategories(sorted);
+      setEditingCategory(null);
+      setCatMessage({ text: 'Categoría modificada correctamente', type: 'success' });
+      fetchData();
+    } catch (err: any) {
+      setCatMessage({ text: err?.message || 'Error al modificar categoría', type: 'error' });
     }
     setTimeout(() => setCatMessage(null), 3500);
   };
@@ -1438,22 +1320,15 @@ export default function Admin() {
     if (!safeConfirm(`¿Seguro que querés eliminar la categoría "${name}"?`)) return;
 
     try {
-      const res = await fetch(`/api/categories/${encodeURIComponent(name)}`, {
-        method: 'DELETE'
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setCatMessage({ text: data.error || 'Error al eliminar categoría', type: 'error' });
-      } else {
-        const sorted = Array.isArray(data)
-          ? [...data].filter(c => typeof c === 'string' && c.trim() && !c.toLowerCase().includes('otro')).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
-          : [];
-        setCategories(sorted);
-        setApplianceCategories(sorted);
-        setCatMessage({ text: 'Categoría eliminada', type: 'success' });
-      }
-    } catch {
-      setCatMessage({ text: 'Error de conexión', type: 'error' });
+      const data = await deleteUnifiedCategoryDirect(name);
+      const sorted = Array.isArray(data)
+        ? [...data].filter(c => typeof c === 'string' && c.trim() && !c.toLowerCase().includes('otro')).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
+        : [];
+      setCategories(sorted);
+      setApplianceCategories(sorted);
+      setCatMessage({ text: 'Categoría eliminada', type: 'success' });
+    } catch (err: any) {
+      setCatMessage({ text: err?.message || 'Error al eliminar categoría', type: 'error' });
     }
     setTimeout(() => setCatMessage(null), 3500);
   };
@@ -1461,20 +1336,15 @@ export default function Admin() {
   const handleResetCategories = async () => {
     if (!safeConfirm('¿Desea restablecer todas las categorías (repuestos y equipos) a la lista predeterminada en orden alfabético A-Z?')) return;
     try {
-      const res = await fetch('/api/categories/reset', { method: 'POST' });
-      const data = await res.json();
-      if (res.ok) {
-        const sorted = Array.isArray(data)
-          ? [...data].filter(c => typeof c === 'string' && c.trim() && !c.toLowerCase().includes('otro')).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
-          : [];
-        setCategories(sorted);
-        setApplianceCategories(sorted);
-        setCatMessage({ text: 'Categorías unificadas restablecidas al orden alfabético A-Z', type: 'success' });
-      } else {
-        setCatMessage({ text: data.error || 'Error al restablecer categorías', type: 'error' });
-      }
-    } catch {
-      setCatMessage({ text: 'Error de red', type: 'error' });
+      const data = await resetUnifiedCategoriesDirect();
+      const sorted = Array.isArray(data)
+        ? [...data].filter(c => typeof c === 'string' && c.trim() && !c.toLowerCase().includes('otro')).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
+        : [];
+      setCategories(sorted);
+      setApplianceCategories(sorted);
+      setCatMessage({ text: 'Categorías unificadas restablecidas al orden alfabético A-Z', type: 'success' });
+    } catch (err: any) {
+      setCatMessage({ text: err?.message || 'Error al restablecer categorías', type: 'error' });
     }
     setTimeout(() => setCatMessage(null), 3500);
   };

@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from './firebaseDb';
 
 export interface Promotion {
   id: string;
@@ -137,9 +139,44 @@ export function saveStoredPromotions(promos: Promotion[]): void {
   }
 }
 
+async function readPromotionsFromFirestore(): Promise<Promotion[]> {
+  try {
+    const ref = doc(db, 'settings', 'promotions');
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (Array.isArray(data?.items)) {
+        return data.items as Promotion[];
+      }
+    }
+    // First initialization: seed default promotions into Firestore
+    const initial = [...DEFAULT_PROMOTIONS];
+    await setDoc(ref, {
+      items: initial,
+      initialized: true,
+      updatedAt: new Date().toISOString()
+    });
+    return initial;
+  } catch (e) {
+    handleFirestoreError(e, OperationType.GET, 'settings/promotions');
+  }
+}
+
+async function writePromotionsToFirestore(items: Promotion[]): Promise<Promotion[]> {
+  try {
+    await setDoc(doc(db, 'settings', 'promotions'), {
+      items,
+      initialized: true,
+      updatedAt: new Date().toISOString()
+    });
+    return items;
+  } catch (e) {
+    handleFirestoreError(e, OperationType.WRITE, 'settings/promotions');
+  }
+}
+
 /**
- * Fetches latest promotions from backend API (Firestore/disk) and updates cache.
- * Deduplicates in-flight requests and avoids returning stale defaults.
+ * Fetches latest promotions directly from Firestore and updates local cache.
  */
 export async function fetchPromotionsFromApi(forceFresh = false): Promise<Promotion[]> {
   if (activeFetchPromise && !forceFresh) {
@@ -148,22 +185,13 @@ export async function fetchPromotionsFromApi(forceFresh = false): Promise<Promot
 
   const promise = (async () => {
     try {
-      const res = await fetch(`/api/promotions?t=${Date.now()}`, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          saveStoredPromotions(data);
-          return data;
-        }
+      const data = await readPromotionsFromFirestore();
+      if (Array.isArray(data)) {
+        saveStoredPromotions(data);
+        return data;
       }
     } catch (e) {
-      console.warn('Could not sync promotions with /api/promotions:', e);
+      console.warn('Could not sync promotions with Firestore:', e);
     } finally {
       activeFetchPromise = null;
     }
@@ -175,10 +203,10 @@ export async function fetchPromotionsFromApi(forceFresh = false): Promise<Promot
 }
 
 /**
- * Toggles a promotion's enabled state locally and on the server.
+ * Toggles a promotion's enabled state locally and in Firestore.
  */
 export async function togglePromotionEnabled(id: string): Promise<Promotion[]> {
-  const current = getStoredPromotions();
+  const current = await readPromotionsFromFirestore().catch(() => getStoredPromotions());
   const updated = current.map(p => {
     if (p.id === id) {
       return { ...p, enabled: !p.enabled, updatedAt: Date.now() };
@@ -186,24 +214,11 @@ export async function togglePromotionEnabled(id: string): Promise<Promotion[]> {
     return p;
   });
 
-  // 1. Immediate optimistic local update
   saveStoredPromotions(updated);
-
-  // 2. Server sync
   try {
-    const res = await fetch(`/api/promotions/toggle/${encodeURIComponent(id)}`, {
-      method: 'POST',
-      headers: { 'Cache-Control': 'no-cache' }
-    });
-    if (res.ok) {
-      const serverData = await res.json();
-      if (Array.isArray(serverData)) {
-        saveStoredPromotions(serverData);
-        return serverData;
-      }
-    }
+    await writePromotionsToFirestore(updated);
   } catch (e) {
-    console.warn('Failed to sync toggle with server:', e);
+    console.warn('Failed to sync promotion toggle with Firestore:', e);
   }
 
   return updated;
@@ -213,38 +228,24 @@ export async function togglePromotionEnabled(id: string): Promise<Promotion[]> {
  * Toggles all promotions on or off at once (Master Switch).
  */
 export async function toggleAllPromotions(enabled: boolean): Promise<Promotion[]> {
-  const current = getStoredPromotions();
+  const current = await readPromotionsFromFirestore().catch(() => getStoredPromotions());
   const updated = current.map(p => ({ ...p, enabled, updatedAt: Date.now() }));
 
-  // 1. Immediate optimistic local update
   saveStoredPromotions(updated);
-
-  // 2. Server sync
   try {
-    const res = await fetch('/api/promotions/toggle-all', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
-      body: JSON.stringify({ enabled })
-    });
-    if (res.ok) {
-      const serverData = await res.json();
-      if (Array.isArray(serverData)) {
-        saveStoredPromotions(serverData);
-        return serverData;
-      }
-    }
+    await writePromotionsToFirestore(updated);
   } catch (e) {
-    console.warn('Failed to sync toggle-all with server:', e);
+    console.warn('Failed to sync toggle-all with Firestore:', e);
   }
 
   return updated;
 }
 
 /**
- * Upserts a promotion locally and on the server.
+ * Upserts a promotion locally and in Firestore.
  */
 export async function upsertPromotion(promoData: Partial<Promotion> & { id?: string; title: string }): Promise<Promotion[]> {
-  const current = getStoredPromotions();
+  const current = await readPromotionsFromFirestore().catch(() => getStoredPromotions());
   const id = promoData.id || `promo-${Date.now()}`;
   const existingIndex = current.findIndex(p => p.id === id);
 
@@ -274,55 +275,28 @@ export async function upsertPromotion(promoData: Partial<Promotion> & { id?: str
     updated = [newPromo, ...current];
   }
 
-  // 1. Immediate optimistic update
   saveStoredPromotions(updated);
-
-  // 2. Server sync
   try {
-    const res = await fetch('/api/promotions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
-      body: JSON.stringify(newPromo)
-    });
-    if (res.ok) {
-      const serverData = await res.json();
-      if (Array.isArray(serverData)) {
-        saveStoredPromotions(serverData);
-        return serverData;
-      }
-    }
+    await writePromotionsToFirestore(updated);
   } catch (e) {
-    console.warn('Failed to sync upsert with server:', e);
+    console.warn('Failed to sync upsert with Firestore:', e);
   }
 
   return updated;
 }
 
 /**
- * Deletes a promotion locally and on the server.
+ * Deletes a promotion locally and in Firestore.
  */
 export async function deletePromotion(id: string): Promise<Promotion[]> {
-  const current = getStoredPromotions();
+  const current = await readPromotionsFromFirestore().catch(() => getStoredPromotions());
   const updated = current.filter(p => p.id !== id);
 
-  // 1. Immediate optimistic local update (honors empty array!)
   saveStoredPromotions(updated);
-
-  // 2. Server sync
   try {
-    const res = await fetch(`/api/promotions/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: { 'Cache-Control': 'no-cache' }
-    });
-    if (res.ok) {
-      const serverData = await res.json();
-      if (Array.isArray(serverData)) {
-        saveStoredPromotions(serverData);
-        return serverData;
-      }
-    }
+    await writePromotionsToFirestore(updated);
   } catch (e) {
-    console.warn('Failed to sync delete with server:', e);
+    console.warn('Failed to sync delete with Firestore:', e);
   }
 
   return updated;
@@ -332,23 +306,14 @@ export async function deletePromotion(id: string): Promise<Promotion[]> {
  * Restores factory sample promotions.
  */
 export async function resetDefaultPromotions(): Promise<Promotion[]> {
-  saveStoredPromotions([...DEFAULT_PROMOTIONS]);
+  const fresh = DEFAULT_PROMOTIONS.map(p => ({ ...p, updatedAt: Date.now() }));
+  saveStoredPromotions(fresh);
   try {
-    const res = await fetch('/api/promotions/reset', {
-      method: 'POST',
-      headers: { 'Cache-Control': 'no-cache' }
-    });
-    if (res.ok) {
-      const serverData = await res.json();
-      if (Array.isArray(serverData)) {
-        saveStoredPromotions(serverData);
-        return serverData;
-      }
-    }
+    await writePromotionsToFirestore(fresh);
   } catch (e) {
-    console.warn('Failed to reset promotions on server:', e);
+    console.warn('Failed to reset promotions in Firestore:', e);
   }
-  return [...DEFAULT_PROMOTIONS];
+  return fresh;
 }
 
 /**

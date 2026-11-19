@@ -21,6 +21,7 @@ import {
   Check
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { findRepairOrOrderByCodeDirect } from '../lib/firestoreStore';
 
 interface RepairData {
   id: string;
@@ -83,44 +84,11 @@ export default function Tracking() {
     setError('');
     setResult(null);
 
-    const clean = raw.replace(/^#/, '').trim();
-    const cleanUpper = clean.toUpperCase();
-    const numOnly = cleanUpper.replace(/^(REP|ORD)-?/i, '');
-
     try {
-      // 1. Try direct query
-      let res = await fetch(`/api/repairs/${encodeURIComponent(clean)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setResult({ type: 'repair', ...data });
+      const found = await findRepairOrOrderByCodeDirect(raw);
+      if (found) {
+        setResult(found);
         return;
-      }
-
-      // 2. Try prepending REP- if not already starting with REP-
-      if (!cleanUpper.startsWith('REP-')) {
-        res = await fetch(`/api/repairs/REP-${encodeURIComponent(numOnly)}`);
-        if (res.ok) {
-          const data = await res.json();
-          setResult({ type: 'repair', ...data });
-          return;
-        }
-      }
-
-      // 3. Try orders
-      res = await fetch(`/api/orders/${encodeURIComponent(clean)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setResult({ type: 'order', ...data });
-        return;
-      }
-
-      if (!cleanUpper.startsWith('ORD-')) {
-        res = await fetch(`/api/orders/ORD-${encodeURIComponent(numOnly)}`);
-        if (res.ok) {
-          const data = await res.json();
-          setResult({ type: 'order', ...data });
-          return;
-        }
       }
 
       setError('No encontramos ninguna orden de servicio técnico o pedido con ese código. Verificá que esté bien escrito e intentá de nuevo.');
