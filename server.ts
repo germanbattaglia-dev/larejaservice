@@ -2552,6 +2552,7 @@ app.get('/api/repairs/:id/print', async (req, res) => {
       day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
     });
     const isPickup = repair.serviceType === 'pickup';
+    const pickupTime = repair.pickupTime || repair.preferredPickupTime || '';
 
     const html = `<!DOCTYPE html>
 <html lang="es">
@@ -2866,6 +2867,12 @@ app.get('/api/repairs/:id/print', async (req, res) => {
           <div class="field-val">${dateFormatted}</div>
         </div>
 
+        ${(isPickup || pickupTime) ? `
+        <div class="field-block">
+          <div class="field-label">Hora de Retiro</div>
+          <div class="field-val">🕒 ${pickupTime || 'A coordinar'}</div>
+        </div>` : ''}
+
         <div class="field-block">
           <div class="field-label">Cliente</div>
           <div class="field-val">${clientName}</div>
@@ -2923,6 +2930,12 @@ app.get('/api/repairs/:id/print', async (req, res) => {
           <div class="field-label">Titular</div>
           <div class="field-val">${clientName}</div>
         </div>
+
+        ${(isPickup || pickupTime) ? `
+        <div class="field-block">
+          <div class="field-label">Hora de Retiro</div>
+          <div class="field-val">🕒 ${pickupTime || 'A coordinar'}</div>
+        </div>` : ''}
 
         <div class="field-block">
           <div class="field-label">Equipo Declarado</div>

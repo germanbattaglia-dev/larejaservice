@@ -10,6 +10,7 @@ interface FormErrors {
   phone?: string;
   email?: string;
   address?: string;
+  pickupTime?: string;
   brandModel?: string;
   problem?: string;
   customApplianceType?: string;
@@ -37,7 +38,8 @@ export default function RepairRequest() {
     brandModel: '',
     problem: '',
     serviceType: 'pickup', // default to pickup
-    address: ''
+    address: '',
+    pickupTime: ''
   });
 
   const [touched, setTouched] = useState<Record<string, boolean>>({
@@ -45,6 +47,7 @@ export default function RepairRequest() {
     phone: false,
     email: false,
     address: false,
+    pickupTime: false,
     brandModel: false,
     problem: false,
     customApplianceType: false
@@ -54,6 +57,7 @@ export default function RepairRequest() {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const addressInputRef = useRef<HTMLInputElement>(null);
+  const pickupTimeInputRef = useRef<HTMLInputElement>(null);
   const brandModelInputRef = useRef<HTMLInputElement>(null);
   const problemInputRef = useRef<HTMLTextAreaElement>(null);
   const customApplianceInputRef = useRef<HTMLInputElement>(null);
@@ -123,12 +127,16 @@ export default function RepairRequest() {
       errors.email = 'Si no tenés WhatsApp y elegiste coordinación por email, debés completar tu correo electrónico.';
     }
 
-    // 4. Address validation (mandatory for pickup)
+    // 4. Address and pickup time validation (mandatory for pickup)
     if (formData.serviceType === 'pickup') {
       if (!formData.address.trim()) {
         errors.address = 'La dirección del retiro en Coronel Suárez es obligatoria.';
       } else if (formData.address.trim().length < 5) {
         errors.address = 'Por favor indicá calle, número y barrio o entrecalles.';
+      }
+
+      if (!formData.pickupTime.trim()) {
+        errors.pickupTime = 'Indicá en qué horario o franja horaria podemos pasar a retirar el equipo.';
       }
     }
 
@@ -183,6 +191,7 @@ export default function RepairRequest() {
       phone: true,
       email: true,
       address: true,
+      pickupTime: true,
       brandModel: true,
       problem: true,
       customApplianceType: true
@@ -197,6 +206,8 @@ export default function RepairRequest() {
         phoneInputRef.current.focus();
       } else if (currentErrors.address && addressInputRef.current) {
         addressInputRef.current.focus();
+      } else if (currentErrors.pickupTime && pickupTimeInputRef.current) {
+        pickupTimeInputRef.current.focus();
       } else if (currentErrors.customApplianceType && customApplianceInputRef.current) {
         customApplianceInputRef.current.focus();
       } else if (currentErrors.brandModel && brandModelInputRef.current) {
@@ -232,6 +243,7 @@ export default function RepairRequest() {
         contactMethod: formData.hasWhatsapp ? 'whatsapp' : formData.contactMethod,
         whatsappClarification: formData.hasWhatsapp ? 'Tiene WhatsApp activo' : (formData.whatsappClarification.trim() || `Sin WhatsApp. Preferencia: ${formData.contactMethod === 'email' ? 'Email' : 'Llamada telefónica'}`),
         address: formData.address.trim(),
+        pickupTime: formData.pickupTime.trim(),
         applianceType: finalApplianceType,
         brandModel: formData.brandModel.trim(),
         problem: formData.problem.trim(),
@@ -239,7 +251,7 @@ export default function RepairRequest() {
         source: 'web',
         pickupNotes: formData.serviceType === 'local'
           ? 'Cliente llevará el equipo al local'
-          : `Solicita retiro a domicilio (${formData.address.trim()}). ${!formData.hasWhatsapp ? `[Sin WhatsApp: coordinar por ${formData.contactMethod === 'email' ? 'Email' : 'Llamada'}${formData.whatsappClarification ? ` - ${formData.whatsappClarification}` : ''}]` : ''}`
+          : `Solicita retiro a domicilio (${formData.address.trim()})${formData.pickupTime.trim() ? ` - Horario: ${formData.pickupTime.trim()}` : ''}. ${!formData.hasWhatsapp ? `[Sin WhatsApp: coordinar por ${formData.contactMethod === 'email' ? 'Email' : 'Llamada'}${formData.whatsappClarification ? ` - ${formData.whatsappClarification}` : ''}]` : ''}`
       });
 
       const finalOrderId = repair.id || generatedId;
@@ -253,6 +265,7 @@ export default function RepairRequest() {
           `👤 *Cliente:* ${formData.name.trim()}\n` +
           `📞 *Teléfono:* ${formData.phone.trim()}\n` +
           `📍 *Dirección de retiro:* ${formData.address.trim()}\n` +
+          `🕒 *Horario de retiro:* ${formData.pickupTime.trim()}\n` +
           `⚙️ *Equipo:* ${finalApplianceType} (${formData.brandModel.trim()})\n` +
           `🔧 *Problema:* ${formData.problem.trim()}\n\n` +
           `¿Podrían confirmarme cuándo pasarían a retirarlo? Gracias!`
@@ -297,6 +310,7 @@ export default function RepairRequest() {
     `👤 *Cliente:* ${formData.name}\n` +
     `📞 *Teléfono:* ${formData.phone}\n` +
     `📍 *Dirección de retiro:* ${formData.address}\n` +
+    `🕒 *Horario de retiro:* ${formData.pickupTime}\n` +
     `⚙️ *Equipo:* ${finalApplianceType} (${formData.brandModel})\n` +
     `🔧 *Problema:* ${formData.problem}\n\n` +
     `¿Podrían confirmarme cuándo pasarían a retirarlo? Gracias!`
@@ -367,6 +381,11 @@ export default function RepairRequest() {
             <div>
               <span className="text-slate-500 block">Dirección en Cnel. Suárez:</span>
               <strong className="text-slate-900 font-bold">{formData.address}</strong>
+              {formData.pickupTime && (
+                <div className="text-[11px] text-slate-700 mt-0.5 font-semibold">
+                  🕒 Horario de retiro: <strong>{formData.pickupTime}</strong>
+                </div>
+              )}
             </div>
             <div>
               <span className="text-slate-500 block">Electrodoméstico:</span>
@@ -763,6 +782,75 @@ export default function RepairRequest() {
                 <p className="text-red-600 text-xs font-semibold flex items-center gap-1.5 mt-1.5 animate-in fade-in slide-in-from-top-1">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                   <span>{errors.address}</span>
+                </p>
+              )}
+            </div>
+
+            {/* Hora / Horario de Retiro */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-[#E31E24]" />
+                  Hora / Horario de Retiro del Equipo *
+                </span>
+                {shouldShowValid('pickupTime', formData.pickupTime) && (
+                  <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5 stroke-[2.5]" /> Completado
+                  </span>
+                )}
+              </label>
+
+              <div className="flex flex-wrap gap-2 mb-2.5">
+                {[
+                  'Mañana (09:00 a 12:30 hs)',
+                  'Tarde (16:00 a 20:00 hs)',
+                  'Todo el día (flexible)'
+                ].map((slot) => (
+                  <button
+                    key={slot}
+                    type="button"
+                    onClick={() => handleChange('pickupTime', slot)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer",
+                      formData.pickupTime === slot
+                        ? "bg-[#E31E24] text-white border-[#E31E24] shadow-2xs"
+                        : "bg-slate-50 text-slate-700 border-gray-200 hover:bg-slate-100"
+                    )}
+                  >
+                    🕒 {slot}
+                  </button>
+                ))}
+              </div>
+
+              <div className="relative">
+                <input
+                  ref={pickupTimeInputRef}
+                  type="text"
+                  placeholder="O escribí la hora exacta (ej: Hoy a las 17:30 hs, Mañana después de las 10 hs)"
+                  value={formData.pickupTime}
+                  onChange={e => handleChange('pickupTime', e.target.value)}
+                  onBlur={() => handleBlur('pickupTime')}
+                  aria-invalid={shouldShowError('pickupTime')}
+                  className={cn(
+                    "w-full px-4 py-3 rounded-xl outline-none transition-all font-medium text-sm pr-10",
+                    shouldShowError('pickupTime')
+                      ? "bg-red-50/50 border-2 border-red-500 text-slate-900 focus:ring-2 focus:ring-red-300"
+                      : shouldShowValid('pickupTime', formData.pickupTime)
+                        ? "bg-emerald-50/20 border border-emerald-400 text-slate-900 focus:ring-2 focus:ring-emerald-200"
+                        : "bg-gray-50 border border-gray-200 focus:bg-white focus:ring-2 focus:ring-[#E31E24] focus:border-transparent"
+                  )}
+                />
+                {shouldShowError('pickupTime') && (
+                  <AlertCircle className="w-4 h-4 text-red-500 absolute right-3.5 top-3.5 pointer-events-none" />
+                )}
+                {shouldShowValid('pickupTime', formData.pickupTime) && (
+                  <Check className="w-4 h-4 text-emerald-600 absolute right-3.5 top-3.5 pointer-events-none" />
+                )}
+              </div>
+              {shouldShowError('pickupTime') && (
+                <p className="text-red-600 text-xs font-semibold flex items-center gap-1.5 mt-1.5 animate-in fade-in slide-in-from-top-1">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{errors.pickupTime}</span>
                 </p>
               )}
             </div>

@@ -195,6 +195,7 @@ export default function Admin() {
     customerName: '',
     phone: '',
     address: '',
+    pickupTime: '',
     applianceType: 'Lavarropas',
     brandModel: '',
     issue: '',
@@ -210,6 +211,7 @@ export default function Admin() {
       customerName: '',
       phone: '',
       address: '',
+      pickupTime: '',
       applianceType: 'Lavarropas',
       brandModel: '',
       issue: '',
@@ -225,6 +227,7 @@ export default function Admin() {
     const clientName = request.customer?.name || request.customerName || '';
     const clientPhone = request.customer?.phone || request.phone || '';
     const clientAddress = request.customer?.address || request.address || '';
+    const clientPickupTime = request.pickupTime || request.preferredPickupTime || '';
     const clientAppliance = request.applianceType || 'Lavarropas';
     const clientBrandModel = request.brandModel || '';
     // Auto-populate the fault field with verbatim what the client reported
@@ -234,6 +237,7 @@ export default function Admin() {
       customerName: clientName,
       phone: clientPhone,
       address: clientAddress,
+      pickupTime: clientPickupTime,
       applianceType: clientAppliance,
       brandModel: clientBrandModel,
       issue: clientProblem,
@@ -569,6 +573,7 @@ export default function Admin() {
         address: newRepairForm.address.trim() || (isPickup ? 'A coordinar' : 'Ingreso directo en local')
       },
       address: newRepairForm.address.trim() || (isPickup ? 'A coordinar' : 'Ingreso directo en local'),
+      pickupTime: isPickup ? newRepairForm.pickupTime.trim() : '',
       phone: newRepairForm.phone.trim(),
       applianceType: newRepairForm.applianceType.trim() || 'Electrodoméstico',
       brandModel: newRepairForm.brandModel.trim() || 'Estándar',
@@ -580,7 +585,7 @@ export default function Admin() {
       serviceType: newRepairForm.serviceType || 'local',
       source: 'admin',
       skipEmail: true,
-      pickupNotes: isPickup ? `Solicitud de retiro (${newRepairForm.address.trim() || 'A coordinar'})` : 'Equipo ingresado en el local',
+      pickupNotes: isPickup ? `Solicitud de retiro (${newRepairForm.address.trim() || 'A coordinar'})${newRepairForm.pickupTime.trim() ? ` - Horario: ${newRepairForm.pickupTime.trim()}` : ''}` : 'Equipo ingresado en el local',
       date: new Date().toISOString()
     };
 
@@ -600,6 +605,7 @@ export default function Admin() {
       customerName: '',
       phone: '',
       address: '',
+      pickupTime: '',
       applianceType: 'Lavarropas',
       brandModel: '',
       issue: '',
@@ -1787,6 +1793,7 @@ export default function Admin() {
                     {pendingPickups.slice(0, 6).map(req => {
                       const clientName = req.customer?.name || req.customerName || 'Cliente';
                       const address = req.customer?.address || req.address || 'A coordinar';
+                      const pickupTime = req.pickupTime || req.preferredPickupTime || '';
                       const fault = req.problem || req.issue || 'Sin falla especificada';
                       const phone = req.customer?.phone || req.phone || '';
                       const hasWa = req.hasWhatsapp !== undefined ? req.hasWhatsapp : (req.customer?.hasWhatsapp !== undefined ? req.customer.hasWhatsapp : true);
@@ -1802,6 +1809,7 @@ export default function Admin() {
                       const pickupWaText = encodeURIComponent(
                         `¡Hola ${clientName}! Te escribimos de *La Reja Repuestos y Reparaciones*.\n` +
                         `Confirmamos tu solicitud de retiro a domicilio para tu *${req.applianceType || 'electrodoméstico'}*${req.brandModel ? ` (${req.brandModel})` : ''} en *${address}*.\n` +
+                        `🕒 Horario de retiro: *${pickupTime || 'A coordinar'}*\n` +
                         `📋 Código de seguimiento: *${req.id}*\n\n` +
                         `En breve pasamos a retirarlo. Podés hacer el seguimiento de tu equipo ingresando tu número de seguimiento en:\n` +
                         `https://larejaservice.com.ar/seguimiento`
@@ -1831,6 +1839,10 @@ export default function Admin() {
                             <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-1">
                               <span className="text-red-500">📍</span>
                               <span className="truncate">{address}</span>
+                            </div>
+                            <div className="text-[11px] text-red-900 bg-red-50 border border-red-100 px-2 py-1 rounded font-bold flex items-center gap-1 mt-1">
+                              <span>🕒</span>
+                              <span className="truncate">Retiro: {pickupTime || 'A coordinar'}</span>
                             </div>
                             <div className="text-[11px] text-slate-700 font-semibold mt-1">
                               {req.applianceType || 'Electrodoméstico'} {req.brandModel ? `• ${req.brandModel}` : ''}
@@ -3935,6 +3947,7 @@ export default function Admin() {
                                 customerName: '',
                                 phone: '',
                                 address: '',
+                                pickupTime: '',
                                 applianceType: 'Lavarropas',
                                 brandModel: '',
                                 issue: '',
@@ -4035,16 +4048,28 @@ export default function Admin() {
                 </div>
 
                 {newRepairForm.serviceType === 'pickup' && (
-                  <div className="p-3 bg-red-50/60 border border-red-200 rounded-xl space-y-1.5 animate-in fade-in duration-150">
-                    <label className="block font-bold text-red-900 text-[11px]">Dirección de Retiro en Coronel Suárez *</label>
-                    <input
-                      type="text"
-                      required={newRepairForm.serviceType === 'pickup'}
-                      placeholder="Calle, número, barrio o entrecalles..."
-                      value={newRepairForm.address}
-                      onChange={e => setNewRepairForm({ ...newRepairForm, address: e.target.value })}
-                      className="w-full px-3 py-2 bg-white border border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400 text-xs font-medium"
-                    />
+                  <div className="p-3 bg-red-50/60 border border-red-200 rounded-xl space-y-2 animate-in fade-in duration-150">
+                    <div>
+                      <label className="block font-bold text-red-900 text-[11px] mb-1">Dirección de Retiro en Coronel Suárez *</label>
+                      <input
+                        type="text"
+                        required={newRepairForm.serviceType === 'pickup'}
+                        placeholder="Calle, número, barrio o entrecalles..."
+                        value={newRepairForm.address}
+                        onChange={e => setNewRepairForm({ ...newRepairForm, address: e.target.value })}
+                        className="w-full px-3 py-2 bg-white border border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400 text-xs font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-red-900 text-[11px] mb-1">Hora / Horario de Retiro del Equipo</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: Hoy 17:30 hs o Mañana de 09:00 a 12:30 hs"
+                        value={newRepairForm.pickupTime}
+                        onChange={e => setNewRepairForm({ ...newRepairForm, pickupTime: e.target.value })}
+                        className="w-full px-3 py-2 bg-white border border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400 text-xs font-medium"
+                      />
+                    </div>
                     <p className="text-[10px] text-slate-600">Las órdenes cargadas desde este panel no generan correos electrónicos (solo envían aviso a larejacs@gmail.com las solicitudes de retiro desde la web).</p>
                   </div>
                 )}
@@ -4237,6 +4262,19 @@ export default function Admin() {
                     />
                   </div>
                 </div>
+
+                {(editingRepair.serviceType === 'pickup' || editingRepair.pickupTime) && (
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Hora / Horario de Retiro</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Hoy 17:30 hs o Mañana de 09:00 a 12:30 hs"
+                      value={editingRepair.pickupTime || ''}
+                      onChange={e => setEditingRepair({ ...editingRepair, pickupTime: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 border border-gray-300 rounded-xl focus:outline-none focus:border-[#29ABE2]"
+                    />
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>

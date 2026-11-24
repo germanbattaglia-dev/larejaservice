@@ -1752,6 +1752,7 @@ export function buildRepairPrintVoucherHtml(repair: any): string {
     })
   );
   const isPickup = repair.serviceType === 'pickup';
+  const pickupTime = escapeHtml(repair.pickupTime || repair.preferredPickupTime || '');
   const safeId = escapeHtml(repair.id);
 
   return `<!DOCTYPE html>
@@ -2070,6 +2071,12 @@ export function buildRepairPrintVoucherHtml(repair: any): string {
           <div class="field-val">${dateFormatted}</div>
         </div>
 
+        ${(isPickup || pickupTime) ? `
+        <div class="field-block">
+          <div class="field-label">Hora de Retiro</div>
+          <div class="field-val">🕒 ${pickupTime || 'A coordinar'}</div>
+        </div>` : ''}
+
         <div class="field-block">
           <div class="field-label">Cliente</div>
           <div class="field-val">${clientName}</div>
@@ -2127,6 +2134,12 @@ export function buildRepairPrintVoucherHtml(repair: any): string {
           <div class="field-label">Titular</div>
           <div class="field-val">${clientName}</div>
         </div>
+
+        ${(isPickup || pickupTime) ? `
+        <div class="field-block">
+          <div class="field-label">Hora de Retiro</div>
+          <div class="field-val">🕒 ${pickupTime || 'A coordinar'}</div>
+        </div>` : ''}
 
         <div class="field-block">
           <div class="field-label">Equipo Declarado</div>
