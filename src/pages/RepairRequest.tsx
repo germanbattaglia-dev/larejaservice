@@ -23,6 +23,8 @@ export default function RepairRequest() {
   const [categories, setCategories] = useState<string[]>([]);
   const [customApplianceType, setCustomApplianceType] = useState('');
   const [hasSubmitAttempt, setHasSubmitAttempt] = useState(false);
+  const [autoOpeningWa, setAutoOpeningWa] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -206,14 +208,17 @@ export default function RepairRequest() {
     }
 
     setLoading(true);
+    setSubmitError(null);
 
     const isOther = formData.applianceType.toLowerCase().includes('otro');
     const finalApplianceType = (isOther && customApplianceType.trim()) 
       ? customApplianceType.trim() 
       : formData.applianceType;
+    const generatedId = `REP-${Math.floor(1000 + Math.random() * 9000)}`;
 
     try {
       const repair = await createRepairDirect({
+        id: generatedId,
         customer: {
           name: formData.name.trim(),
           phone: formData.phone.trim(),
@@ -237,10 +242,44 @@ export default function RepairRequest() {
           : `Solicita retiro a domicilio (${formData.address.trim()}). ${!formData.hasWhatsapp ? `[Sin WhatsApp: coordinar por ${formData.contactMethod === 'email' ? 'Email' : 'Llamada'}${formData.whatsappClarification ? ` - ${formData.whatsappClarification}` : ''}]` : ''}`
       });
 
-      setTrackingId(repair.id || 'REP-PENDIENTE');
+      const finalOrderId = repair.id || generatedId;
+      setTrackingId(finalOrderId);
       setSubmitted(true);
+
+      if ((formData.serviceType || 'pickup') === 'pickup') {
+        const autoWaMessage = encodeURIComponent(
+          `Hola La Reja Repuestos! Acabo de solicitar retiro a domicilio en la web.\n\n` +
+          `📋 *Orden:* ${finalOrderId}\n` +
+          `👤 *Cliente:* ${formData.name.trim()}\n` +
+          `📞 *Teléfono:* ${formData.phone.trim()}\n` +
+          `📍 *Dirección de retiro:* ${formData.address.trim()}\n` +
+          `⚙️ *Equipo:* ${finalApplianceType} (${formData.brandModel.trim()})\n` +
+          `🔧 *Problema:* ${formData.problem.trim()}\n\n` +
+          `¿Podrían confirmarme cuándo pasarían a retirarlo? Gracias!`
+        );
+        const waUrl = `https://wa.me/5492926516921?text=${autoWaMessage}`;
+        setAutoOpeningWa(true);
+        setTimeout(() => {
+          try {
+            if (window.self === window.top) {
+              window.location.assign(waUrl);
+            } else {
+              const link = document.createElement('a');
+              link.href = waUrl;
+              link.target = '_blank';
+              link.rel = 'noopener noreferrer';
+              document.body.appendChild(link);
+              link.click();
+              link.remove();
+            }
+          } catch {
+            // El botón manual de WhatsApp queda visible en pantalla
+          }
+        }, 650);
+      }
     } catch (err) {
       console.error('Error submitting repair:', err);
+      setSubmitError('No se pudo registrar la solicitud. Intentá nuevamente o avisanos directo por WhatsApp al 2926-516921.');
       setHasSubmitAttempt(true);
     } finally {
       setLoading(false);
@@ -275,14 +314,26 @@ export default function RepairRequest() {
           Hemos registrado tu pedido y enviado una notificación inmediata por correo electrónico a nuestro equipo técnico.
         </p>
 
-        {/* Email confirmation box */}
+        {/* WhatsApp / Email confirmation box */}
+        {autoOpeningWa && (
+          <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-2xl mb-4 text-left flex items-start gap-3.5 shadow-sm">
+            <div className="p-2 bg-emerald-100 rounded-xl text-emerald-700 shrink-0 mt-0.5">
+              <MessageCircle className="w-5 h-5" />
+            </div>
+            <div className="text-xs text-emerald-950 leading-relaxed">
+              <strong className="font-black block text-sm mb-0.5">Abriendo WhatsApp hacia La Reja (2926-516921)...</strong>
+              Tu solicitud ya quedó registrada. En instantes se abre WhatsApp con el mensaje listo para enviarnos; si no se abrió automáticamente, usá el botón verde de abajo.
+            </div>
+          </div>
+        )}
+
         <div className="p-4 bg-blue-50/80 border border-blue-200 rounded-2xl mb-6 text-left flex items-start gap-3.5 shadow-sm">
           <div className="p-2 bg-blue-100 rounded-xl text-[#29ABE2] shrink-0 mt-0.5">
             <Mail className="w-5 h-5" />
           </div>
           <div className="text-xs text-slate-700 leading-relaxed">
-            <strong className="text-slate-900 font-bold block text-sm mb-0.5">Aviso enviado a larejacs@gmail.com</strong>
-            Se notificó al personal de <strong>La Reja Repuestos & Servicio Técnico</strong> con todos los datos de tu equipo (<em>{finalApplianceType} {formData.brandModel}</em>) y tu dirección de retiro (<em>{formData.address}</em>).
+            <strong className="text-slate-900 font-bold block text-sm mb-0.5">Solicitud registrada para La Reja</strong>
+            Se registró el pedido para <strong>La Reja Repuestos &amp; Servicio Técnico</strong> con todos los datos de tu equipo (<em>{finalApplianceType} {formData.brandModel}</em>) y tu dirección de retiro (<em>{formData.address}</em>).
           </div>
         </div>
 
@@ -330,17 +381,17 @@ export default function RepairRequest() {
 
         {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-          {formData.hasWhatsapp ? (
-            <a
-              href={`https://wa.me/5492926405060?text=${whatsappMessage}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full sm:w-auto px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm"
-            >
-              <MessageCircle className="w-5 h-5" />
-              Avisar también por WhatsApp
-            </a>
-          ) : (
+          <a
+            href={`https://wa.me/5492926516921?text=${whatsappMessage}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full sm:w-auto px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm"
+          >
+            <MessageCircle className="w-5 h-5" />
+            Enviar Solicitud por WhatsApp (2926-516921)
+          </a>
+
+          {!formData.hasWhatsapp && (
             <button
               type="button"
               onClick={() => window.print()}
@@ -392,7 +443,17 @@ export default function RepairRequest() {
         </div>
       </div>
 
-      {/* Form Submission Global Error Summary (if attempted with missing fields) */}
+      {/* Form Submission Global Error Summary (if attempted with missing fields or save failure) */}
+      {submitError && (
+        <div className="mb-6 p-4 bg-red-50 border-2 border-red-300 rounded-2xl flex items-start gap-3.5 animate-in fade-in slide-in-from-top-2">
+          <AlertTriangle className="w-5 h-5 text-[#E31E24] shrink-0 mt-0.5" />
+          <div className="text-xs text-red-900 space-y-1">
+            <strong className="text-sm font-bold block text-red-900">Error al enviar la solicitud</strong>
+            <p className="text-red-700 leading-relaxed">{submitError}</p>
+          </div>
+        </div>
+      )}
+
       {hasSubmitAttempt && !isValid && (
         <div className="mb-6 p-4 bg-red-50 border-2 border-red-200 rounded-2xl flex items-start gap-3.5 animate-in fade-in slide-in-from-top-2">
           <AlertTriangle className="w-5 h-5 text-[#E31E24] shrink-0 mt-0.5" />

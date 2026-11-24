@@ -2557,173 +2557,417 @@ app.get('/api/repairs/:id/print', async (req, res) => {
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Orden de Reparación ${repair.id} - La Reja</title>
+  <title>Ticket 58mm ${repair.id} - La Reja</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: #f1f5f9; color: #0f172a; padding: 20px; font-size: 13px; }
-    .print-container { max-width: 800px; margin: 0 auto; background: white; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-radius: 12px; }
-    .actions-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0; }
-    .btn { padding: 8px 16px; font-weight: bold; font-size: 13px; border-radius: 6px; cursor: pointer; border: none; text-decoration: none; }
-    .btn-print { background: #E31E24; color: white; }
-    .btn-close { background: #e2e8f0; color: #334155; }
-    .ticket-section { border: 2px dashed #cbd5e1; padding: 18px; margin-bottom: 24px; border-radius: 8px; position: relative; }
-    .ticket-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 14px; }
-    .shop-title { font-size: 18px; font-weight: 900; color: #0f172a; letter-spacing: -0.5px; }
-    .shop-sub { font-size: 11px; color: #64748b; font-weight: 600; margin-top: 2px; }
-    .order-badge { text-align: right; }
-    .order-id { font-size: 20px; font-weight: 900; font-family: monospace; color: #E31E24; }
-    .service-badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 800; text-transform: uppercase; margin-top: 4px; }
-    .badge-pickup { background: #fee2e2; color: #991b1b; border: 1px solid #f87171; }
-    .badge-local { background: #e0f2fe; color: #075985; border: 1px solid #7dd3fc; }
-    .stub-tag { background: #0f172a; color: white; display: inline-block; padding: 2px 8px; font-size: 10px; font-weight: 800; border-radius: 4px; margin-bottom: 8px; text-transform: uppercase; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 12px; }
-    .field-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; }
-    .field-label { font-size: 10px; font-weight: 800; text-transform: uppercase; color: #64748b; margin-bottom: 2px; }
-    .field-val { font-size: 13px; font-weight: 700; color: #0f172a; word-break: break-word; }
-    .wa-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 800; margin-top: 3px; }
-    .wa-yes { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
-    .wa-no { background: #fef3c7; color: #92400e; border: 1px solid #fde047; }
-    .fault-box { background: #fff1f2; border: 1px solid #fecdd3; border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
-    .fault-title { font-size: 11px; font-weight: 800; color: #9f1239; text-transform: uppercase; margin-bottom: 4px; }
-    .fault-text { font-size: 13px; font-weight: 600; color: #881337; line-height: 1.4; }
-    .signature-area { display: flex; justify-content: space-between; margin-top: 24px; padding-top: 15px; border-top: 1px dashed #cbd5e1; }
-    .sig-line { width: 45%; border-top: 1px solid #0f172a; text-align: center; font-size: 11px; font-weight: bold; color: #475569; padding-top: 4px; margin-top: 30px; }
-    .cut-line { text-align: center; margin: 15px 0; font-size: 11px; font-weight: bold; color: #94a3b8; letter-spacing: 2px; }
-    .tracking-url { font-family: monospace; font-size: 11px; color: #0284c7; }
+    @page {
+      size: 58mm auto;
+      margin: 0;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    html, body {
+      width: 100%;
+      background: #e2e8f0;
+      color: #000000;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      font-size: 13.5px;
+      line-height: 1.35;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .page-wrapper {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px 8px;
+    }
+    .actions-bar {
+      width: 100%;
+      max-width: 340px;
+      background: #ffffff;
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      text-align: center;
+    }
+    .actions-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: #0f172a;
+    }
+    .actions-buttons {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+    }
+    .btn {
+      padding: 8px 14px;
+      font-weight: 800;
+      font-size: 13px;
+      border-radius: 6px;
+      cursor: pointer;
+      border: none;
+    }
+    .btn-print {
+      background: #E31E24;
+      color: #ffffff;
+      flex: 1;
+    }
+    .btn-close {
+      background: #e2e8f0;
+      color: #1e293b;
+    }
+    .print-container {
+      width: 58mm;
+      max-width: 100%;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 3mm 2mm;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+    }
+    .ticket-section {
+      width: 100%;
+      padding: 4px 0 8px 0;
+    }
+    .stub-tag {
+      display: block;
+      width: 100%;
+      text-align: center;
+      background: #000000;
+      color: #ffffff;
+      padding: 5px 5px;
+      font-size: 12.5px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      margin-bottom: 8px;
+    }
+    .ticket-header {
+      text-align: center;
+      border-bottom: 2px solid #000000;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+    .shop-title {
+      font-size: 17px;
+      font-weight: 900;
+      color: #000000;
+      line-height: 1.2;
+      letter-spacing: -0.2px;
+    }
+    .shop-sub {
+      font-size: 12.5px;
+      color: #000000;
+      font-weight: 700;
+      margin-top: 3px;
+      line-height: 1.3;
+    }
+    .order-id {
+      font-size: 24px;
+      font-weight: 900;
+      font-family: monospace;
+      color: #000000;
+      margin-top: 6px;
+      letter-spacing: 0.5px;
+    }
+    .service-badge {
+      display: block;
+      width: 100%;
+      text-align: center;
+      padding: 5px 6px;
+      border: 2px solid #000000;
+      font-size: 13.5px;
+      font-weight: 900;
+      text-transform: uppercase;
+      margin-top: 6px;
+      color: #000000;
+      background: #ffffff;
+    }
+    .field-block {
+      width: 100%;
+      text-align: center;
+      border-bottom: 1px dashed #000000;
+      padding: 6px 2px;
+    }
+    .field-label {
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: #000000;
+      margin-bottom: 2px;
+    }
+    .field-val {
+      font-size: 15.5px;
+      font-weight: 800;
+      color: #000000;
+      word-break: break-word;
+      line-height: 1.3;
+    }
+    .field-sub {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: #000000;
+      margin-top: 3px;
+      word-break: break-word;
+    }
+    .wa-tag {
+      display: inline-block;
+      margin-top: 4px;
+      padding: 2px 6px;
+      border: 1.5px solid #000000;
+      font-size: 12.5px;
+      font-weight: 800;
+      color: #000000;
+    }
+    .fault-box {
+      width: 100%;
+      text-align: center;
+      border: 2px solid #000000;
+      padding: 7px 5px;
+      margin: 8px 0;
+    }
+    .fault-title {
+      font-size: 12.5px;
+      font-weight: 900;
+      color: #000000;
+      text-transform: uppercase;
+      margin-bottom: 3px;
+    }
+    .fault-text {
+      font-size: 15px;
+      font-weight: 800;
+      color: #000000;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .notes-box {
+      width: 100%;
+      text-align: center;
+      border: 1.5px dashed #000000;
+      padding: 6px 5px;
+      margin: 6px 0;
+    }
+    .notes-text {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: #000000;
+      min-height: 24px;
+      word-break: break-word;
+    }
+    .tracking-box {
+      width: 100%;
+      text-align: center;
+      border: 1.5px solid #000000;
+      padding: 6px 4px;
+      margin: 8px 0;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: #000000;
+      line-height: 1.35;
+    }
+    .tracking-url {
+      display: block;
+      margin-top: 3px;
+      font-family: monospace;
+      font-size: 12px;
+      font-weight: 800;
+      word-break: break-all;
+      color: #000000;
+    }
+    .legal-note {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #000000;
+      text-align: center;
+      line-height: 1.3;
+      margin-top: 6px;
+    }
+    .signature-area {
+      width: 100%;
+      margin-top: 12px;
+    }
+    .sig-line {
+      width: 90%;
+      margin: 24px auto 0 auto;
+      border-top: 1.5px solid #000000;
+      text-align: center;
+      font-size: 12.5px;
+      font-weight: 800;
+      color: #000000;
+      padding-top: 3px;
+    }
+    .cut-line {
+      width: 100%;
+      text-align: center;
+      margin: 14px 0;
+      padding: 6px 0;
+      border-top: 2px dashed #000000;
+      border-bottom: 2px dashed #000000;
+      font-size: 12.5px;
+      font-weight: 900;
+      color: #000000;
+      letter-spacing: 1px;
+    }
     @media print {
-      body { background: white; padding: 0; }
-      .print-container { box-shadow: none; padding: 0; max-width: 100%; border-radius: 0; }
-      .actions-bar { display: none !important; }
-      .ticket-section { page-break-inside: avoid; border: 1px solid #000; }
+      html, body {
+        width: 100%;
+        background: #ffffff;
+        margin: 0;
+        padding: 0;
+      }
+      .page-wrapper {
+        padding: 0;
+        margin: 0 auto;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .actions-bar {
+        display: none !important;
+      }
+      .print-container {
+        width: 100%;
+        max-width: 52mm;
+        margin: 0 auto;
+        padding: 1.5mm 1mm;
+        box-shadow: none;
+      }
+      .ticket-section {
+        page-break-inside: avoid;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="print-container">
+  <div class="page-wrapper">
     <div class="actions-bar">
-      <div>
-        <strong>Orden de Trabajo: ${repair.id}</strong> • ${dateFormatted}
-      </div>
-      <div>
+      <div class="actions-title">Comprobante 58mm • ${repair.id}</div>
+      <div class="actions-buttons">
         <button class="btn btn-close" onclick="window.close()">Cerrar</button>
-        <button class="btn btn-print" onclick="window.print()">🖨️ Imprimir Ticket / Ficha</button>
+        <button class="btn btn-print" onclick="window.print()">🖨️ Imprimir Ticket</button>
       </div>
     </div>
 
-    <!-- TALÓN 1: PARA EL TALLER / REPARADOR -->
-    <div class="ticket-section">
-      <span class="stub-tag">TALÓN 1 • TALLER / FICHA TÉCNICA</span>
-      <div class="ticket-header">
-        <div>
-          <div class="shop-title">LA REJA - REPUESTOS Y REPARACIONES</div>
-          <div class="shop-sub">Av. Casey 1234, Coronel Suárez • Tel: 2926 40-1234 • larejacs@gmail.com</div>
-        </div>
-        <div class="order-badge">
+    <div class="print-container">
+      <!-- TALÓN 1: PARA EL TALLER / REPARADOR -->
+      <div class="ticket-section">
+        <span class="stub-tag">TALÓN 1 • TALLER / FICHA</span>
+        <div class="ticket-header">
+          <div class="shop-title">LA REJA<br/>REPUESTOS Y REPARACIONES</div>
+          <div class="shop-sub">Coronel Suárez<br/>Tel / WA: 2926-516921<br/>larejacs@gmail.com</div>
           <div class="order-id">${repair.id}</div>
-          <span class="service-badge ${isPickup ? 'badge-pickup' : 'badge-local'}">
+          <div class="service-badge">
             ${isPickup ? '🚚 RETIRO A DOMICILIO' : '🏬 INGRESO EN LOCAL'}
-          </span>
+          </div>
         </div>
-      </div>
 
-      <div class="grid-2">
-        <div class="field-box">
-          <div class="field-label">Cliente</div>
-          <div class="field-val">${clientName}</div>
-          <div style="margin-top: 4px; font-size: 12px; color: #334155;">📍 ${clientAddress}</div>
-        </div>
-        <div class="field-box">
-          <div class="field-label">Contacto / Teléfono</div>
-          <div class="field-val">${clientPhone}</div>
-          ${hasWa 
-            ? '<span class="wa-tag wa-yes">✓ Con WhatsApp (Verificado)</span>' 
-            : `<span class="wa-tag wa-no">⚠ Sin WhatsApp (${waClarification || 'Llamar por teléfono'})</span>`
-          }
-        </div>
-      </div>
-
-      <div class="grid-2">
-        <div class="field-box">
-          <div class="field-label">Electrodoméstico & Marca</div>
-          <div class="field-val">${appliance} • ${brand}</div>
-        </div>
-        <div class="field-box">
-          <div class="field-label">Fecha de Ingreso / Solicitud</div>
+        <div class="field-block">
+          <div class="field-label">Fecha de Solicitud</div>
           <div class="field-val">${dateFormatted}</div>
         </div>
-      </div>
 
-      <div class="fault-box">
-        <div class="fault-title">Falla reportada por el cliente:</div>
-        <div class="fault-text">"${fault}"</div>
-      </div>
-
-      <div class="field-box" style="margin-bottom: 12px;">
-        <div class="field-label">Observaciones técnicas / Diagnóstico:</div>
-        <div class="field-val" style="font-size: 12px; font-weight: normal; min-height: 30px;">${techNotes}</div>
-      </div>
-
-      <div class="signature-area">
-        <div class="sig-line">Firma / Aclaración Técnico</div>
-        <div class="sig-line">Firma del Cliente</div>
-      </div>
-    </div>
-
-    <div class="cut-line">------------------ ✂ CORTAR AQUÍ ------------------</div>
-
-    <!-- TALÓN 2: PARA EL CLIENTE / CONSTANCIA DE RETIRO O INGRESO -->
-    <div class="ticket-section">
-      <span class="stub-tag" style="background: #E31E24;">TALÓN 2 • CONSTANCIA PARA EL CLIENTE</span>
-      <div class="ticket-header">
-        <div>
-          <div class="shop-title">LA REJA - REPUESTOS Y REPARACIONES</div>
-          <div class="shop-sub">Av. Casey 1234, Coronel Suárez • WhatsApp: 2926 40-1234</div>
+        <div class="field-block">
+          <div class="field-label">Cliente</div>
+          <div class="field-val">${clientName}</div>
+          <div class="field-sub">📍 ${clientAddress}</div>
         </div>
-        <div class="order-badge">
+
+        <div class="field-block">
+          <div class="field-label">Teléfono / Contacto</div>
+          <div class="field-val">${clientPhone}</div>
+          <div class="wa-tag">
+            ${hasWa 
+              ? '✓ Con WhatsApp' 
+              : `⚠ Sin WA (${waClarification || 'Llamar'})`
+            }
+          </div>
+        </div>
+
+        <div class="field-block">
+          <div class="field-label">Electrodoméstico y Marca</div>
+          <div class="field-val">${appliance}</div>
+          <div class="field-sub">${brand}</div>
+        </div>
+
+        <div class="fault-box">
+          <div class="fault-title">Falla Reportada:</div>
+          <div class="fault-text">"${fault}"</div>
+        </div>
+
+        <div class="notes-box">
+          <div class="field-label">Observaciones Técnicas:</div>
+          <div class="notes-text">${techNotes}</div>
+        </div>
+
+        <div class="signature-area">
+          <div class="sig-line">Firma Técnico</div>
+          <div class="sig-line">Firma Cliente</div>
+        </div>
+      </div>
+
+      <div class="cut-line">--- ✂ CORTAR AQUÍ ✂ ---</div>
+
+      <!-- TALÓN 2: PARA EL CLIENTE / CONSTANCIA DE RETIRO O INGRESO -->
+      <div class="ticket-section">
+        <span class="stub-tag">TALÓN 2 • CONSTANCIA CLIENTE</span>
+        <div class="ticket-header">
+          <div class="shop-title">LA REJA<br/>REPUESTOS Y REPARACIONES</div>
+          <div class="shop-sub">Coronel Suárez<br/>WhatsApp: 2926-516921</div>
           <div class="order-id">${repair.id}</div>
-          <span class="service-badge ${isPickup ? 'badge-pickup' : 'badge-local'}">
+          <div class="service-badge">
             ${isPickup ? '🚚 RETIRO A DOMICILIO' : '🏬 INGRESO EN LOCAL'}
-          </span>
+          </div>
         </div>
-      </div>
 
-      <div class="grid-2">
-        <div class="field-box">
+        <div class="field-block">
           <div class="field-label">Titular</div>
           <div class="field-val">${clientName}</div>
         </div>
-        <div class="field-box">
+
+        <div class="field-block">
           <div class="field-label">Equipo Declarado</div>
-          <div class="field-val">${appliance} • ${brand}</div>
+          <div class="field-val">${appliance}</div>
+          <div class="field-sub">${brand}</div>
         </div>
-      </div>
 
-      <div class="fault-box" style="background: #f8fafc; border-color: #cbd5e1;">
-        <div class="fault-title" style="color: #475569;">Falla / Problema informado:</div>
-        <div class="fault-text" style="color: #1e293b;">"${fault}"</div>
-      </div>
+        <div class="fault-box">
+          <div class="fault-title">Falla Informada:</div>
+          <div class="fault-text">"${fault}"</div>
+        </div>
 
-      <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 10px 12px; border-radius: 6px; font-size: 11px; color: #166534; line-height: 1.4; margin-bottom: 12px;">
-        <strong>Seguí el estado de tu equipo online en vivo:</strong><br/>
-        Ingresá a <span class="tracking-url">https://larejaservice.com.ar/tracking?code=${repair.id}</span>
-      </div>
+        <div class="tracking-box">
+          <strong>Seguí tu equipo online:</strong>
+          <span class="tracking-url">https://www.larejaservice.com.ar/seguimiento?code=${repair.id}</span>
+        </div>
 
-      <div style="font-size: 10px; color: #64748b; line-height: 1.3;">
-        * Presupuestos sin cargo en taller. Pasados los 60 días de notificado el equipo listo para retirar, se cobrará costo de depósito o se procederá según términos comerciales vigentes.
-      </div>
+        <div class="legal-note">
+          * Presupuestos sin cargo en taller. Pasados los 60 días de notificado listo para retirar, se aplicarán términos de depósito vigentes.
+        </div>
 
-      <div class="signature-area">
-        <div class="sig-line">Firma Recepción La Reja</div>
-        <div class="sig-line">Firma y Aclaración Cliente</div>
+        <div class="signature-area">
+          <div class="sig-line">Firma Recepción La Reja</div>
+          <div class="sig-line">Firma y Aclaración Cliente</div>
+        </div>
       </div>
     </div>
   </div>
 
   <script>
     window.onload = function() {
-      setTimeout(function() {
-        window.print();
-      }, 400);
+      if (window.self === window.top) {
+        setTimeout(function() {
+          window.print();
+        }, 350);
+      }
     };
   </script>
 </body>
