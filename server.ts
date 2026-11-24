@@ -2782,14 +2782,6 @@ app.get('/api/repairs/:id/print', async (req, res) => {
       word-break: break-all;
       color: #000000;
     }
-    .legal-note {
-      font-size: 11.5px;
-      font-weight: 700;
-      color: #000000;
-      text-align: center;
-      line-height: 1.3;
-      margin-top: 6px;
-    }
     .signature-area {
       width: 100%;
       margin-top: 12px;
@@ -2808,13 +2800,12 @@ app.get('/api/repairs/:id/print', async (req, res) => {
       width: 100%;
       text-align: center;
       margin: 14px 0;
-      padding: 6px 0;
-      border-top: 2px dashed #000000;
-      border-bottom: 2px dashed #000000;
-      font-size: 12.5px;
+      padding: 4px 0;
+      font-size: 12px;
       font-weight: 900;
       color: #000000;
-      letter-spacing: 1px;
+      letter-spacing: 0.4px;
+      white-space: nowrap;
     }
     @media print {
       html, body {
@@ -2947,10 +2938,6 @@ app.get('/api/repairs/:id/print', async (req, res) => {
         <div class="tracking-box">
           <strong>Seguí tu equipo online ingresando el código ${repair.id} en:</strong>
           <span class="tracking-url">https://larejaservice.com.ar/seguimiento</span>
-        </div>
-
-        <div class="legal-note">
-          * Presupuestos sin cargo en taller. Pasados los 60 días de notificado listo para retirar, se aplicarán términos de depósito vigentes.
         </div>
 
         <div class="signature-area">
