@@ -2945,8 +2945,8 @@ app.get('/api/repairs/:id/print', async (req, res) => {
         </div>
 
         <div class="tracking-box">
-          <strong>Seguí tu equipo online:</strong>
-          <span class="tracking-url">https://www.larejaservice.com.ar/seguimiento?code=${repair.id}</span>
+          <strong>Seguí tu equipo online ingresando el código ${repair.id} en:</strong>
+          <span class="tracking-url">https://larejaservice.com.ar/seguimiento</span>
         </div>
 
         <div class="legal-note">

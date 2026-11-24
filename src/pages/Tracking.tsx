@@ -269,7 +269,7 @@ export default function Tracking() {
 
             {statusInfo.key === 'listo_para_entregar' && (
               <a
-                href={`https://wa.me/5492926421234?text=${whatsappMessage}`}
+                href={`https://wa.me/5492926516921?text=${whatsappMessage}`}
                 target="_blank"
                 rel="noreferrer"
                 className="shrink-0 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs uppercase tracking-wider flex items-center gap-2 shadow-sm transition-all"
@@ -449,7 +449,7 @@ export default function Tracking() {
 
           <div className="flex flex-col sm:flex-row md:flex-col gap-3 justify-end">
             <a
-              href={`https://wa.me/5492926421234?text=${whatsappMessage}`}
+              href={`https://wa.me/5492926516921?text=${whatsappMessage}`}
               target="_blank"
               rel="noreferrer"
               className="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm transition-all"

@@ -1753,7 +1753,6 @@ export function buildRepairPrintVoucherHtml(repair: any): string {
   );
   const isPickup = repair.serviceType === 'pickup';
   const safeId = escapeHtml(repair.id);
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://www.larejaservice.com.ar';
 
   return `<!DOCTYPE html>
 <html lang="es">
@@ -2150,8 +2149,8 @@ export function buildRepairPrintVoucherHtml(repair: any): string {
         </div>
 
         <div class="tracking-box">
-          <strong>Seguí tu equipo online:</strong>
-          <span class="tracking-url">${escapeHtml(origin)}/seguimiento?code=${safeId}</span>
+          <strong>Seguí tu equipo online ingresando el código ${safeId} en:</strong>
+          <span class="tracking-url">https://larejaservice.com.ar/seguimiento</span>
         </div>
 
         <div class="legal-note">

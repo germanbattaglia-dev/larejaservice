@@ -1791,6 +1791,21 @@ export default function Admin() {
                       const phone = req.customer?.phone || req.phone || '';
                       const hasWa = req.hasWhatsapp !== undefined ? req.hasWhatsapp : (req.customer?.hasWhatsapp !== undefined ? req.customer.hasWhatsapp : true);
                       const waClarification = req.whatsappClarification || req.customer?.whatsappClarification || req.contactMethod || '';
+                      const digitsPhone = String(phone).replace(/\D/g, '');
+                      const waPhone = !digitsPhone
+                        ? ''
+                        : digitsPhone.startsWith('54')
+                          ? digitsPhone
+                          : digitsPhone.startsWith('0')
+                            ? `549${digitsPhone.slice(1)}`
+                            : `549${digitsPhone}`;
+                      const pickupWaText = encodeURIComponent(
+                        `¡Hola ${clientName}! Te escribimos de *La Reja Repuestos y Reparaciones*.\n` +
+                        `Confirmamos tu solicitud de retiro a domicilio para tu *${req.applianceType || 'electrodoméstico'}*${req.brandModel ? ` (${req.brandModel})` : ''} en *${address}*.\n` +
+                        `📋 Código de seguimiento: *${req.id}*\n\n` +
+                        `En breve pasamos a retirarlo. Podés hacer el seguimiento de tu equipo ingresando tu número de seguimiento en:\n` +
+                        `https://larejaservice.com.ar/seguimiento`
+                      );
 
                       return (
                         <div key={req.id} className="bg-white p-3 rounded-xl border border-red-200/80 shadow-sm flex flex-col justify-between space-y-2">
@@ -1825,24 +1840,38 @@ export default function Admin() {
                             </div>
                           </div>
                           
-                          <div className="flex items-center gap-1.5 pt-1">
-                            <button
-                              type="button"
-                              onClick={() => handleLoadPickupRequestIntoForm(req)}
-                              className="flex-1 py-1.5 bg-[#E31E24] hover:bg-[#c4161b] text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
-                            >
-                              <Wrench className="w-3.5 h-3.5" />
-                              Cargar en Orden
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handlePrintRepair(req.id)}
-                              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold flex items-center justify-center gap-1 shadow-sm transition-colors cursor-pointer"
-                              title="Imprimir comprobante y talón de retiro a domicilio"
-                            >
-                              <Printer className="w-3.5 h-3.5 text-slate-600" />
-                              Imprimir
-                            </button>
+                          <div className="space-y-1.5 pt-1">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleLoadPickupRequestIntoForm(req)}
+                                className="flex-1 py-1.5 bg-[#E31E24] hover:bg-[#c4161b] text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                              >
+                                <Wrench className="w-3.5 h-3.5" />
+                                Cargar en Orden
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handlePrintRepair(req.id)}
+                                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold flex items-center justify-center gap-1 shadow-sm transition-colors cursor-pointer"
+                                title="Imprimir comprobante y talón de retiro a domicilio"
+                              >
+                                <Printer className="w-3.5 h-3.5 text-slate-600" />
+                                Imprimir
+                              </button>
+                            </div>
+                            {waPhone && (
+                              <a
+                                href={`https://wa.me/${waPhone}?text=${pickupWaText}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="w-full py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-colors"
+                                title="Enviar notificación de retiro por WhatsApp al cliente"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                                Notificar Retiro por WhatsApp
+                              </a>
+                            )}
                           </div>
                         </div>
                       );
@@ -1977,22 +2006,29 @@ export default function Admin() {
                           const normStatus = getAdminNormalizedStatus(repair.status);
                           
                           // Dynamic WhatsApp text based on real status
+                          const waPhoneRow = !cleanPhone
+                            ? ''
+                            : cleanPhone.startsWith('54')
+                              ? cleanPhone
+                              : cleanPhone.startsWith('0')
+                                ? `549${cleanPhone.slice(1)}`
+                                : `549${cleanPhone}`;
                           let waText = '';
                           if (normStatus === 'Listo para entregar') {
                             waText = encodeURIComponent(
-                              `¡Hola ${customerName}! Te avisamos desde La Reja Repuestos que tu ${appliance} (Orden: ${repair.id}) ya está LISTO PARA ENTREGAR. Podés pasar a retirarlo por nuestro local en Av. Casey 1234. También podés ver el seguimiento en vivo en: ${window.location.origin}/tracking?code=${repair.id}`
+                              `¡Hola ${customerName}! Te avisamos desde La Reja Repuestos que tu ${appliance} (Código de seguimiento: *${repair.id}*) ya está LISTO PARA ENTREGAR. Podés pasar a retirarlo por nuestro local en Av. Casey 1234.\n\nSeguí tu equipo ingresando tu código en:\nhttps://larejaservice.com.ar/seguimiento`
                             );
                           } else if (normStatus === 'En Taller') {
                             waText = encodeURIComponent(
-                              `Hola ${customerName}! Desde La Reja Repuestos te informamos que tu ${appliance} (Orden: ${repair.id}) ya se encuentra EN TALLER en proceso de revisión técnica y diagnóstico. Podés seguir el avance en vivo en: ${window.location.origin}/tracking?code=${repair.id}`
+                              `Hola ${customerName}! Desde La Reja Repuestos te informamos que tu ${appliance} (Código de seguimiento: *${repair.id}*) ya se encuentra EN TALLER en proceso de revisión técnica y diagnóstico.\n\nPodés seguir el avance ingresando tu código en:\nhttps://larejaservice.com.ar/seguimiento`
                             );
                           } else if (normStatus === 'Entregado') {
                             waText = encodeURIComponent(
-                              `¡Hola ${customerName}! Te confirmamos la entrega de tu ${appliance} (Orden: ${repair.id}). ¡Muchas gracias por confiar en La Reja Repuestos!`
+                              `¡Hola ${customerName}! Te confirmamos la entrega de tu ${appliance} (Orden: *${repair.id}*). ¡Muchas gracias por confiar en La Reja Repuestos!`
                             );
                           } else {
                             waText = encodeURIComponent(
-                              `Hola ${customerName}! Registramos tu orden ${repair.id} para tu ${appliance}. Podés consultar el estado cuando quieras en: ${window.location.origin}/tracking?code=${repair.id}`
+                              `Hola ${customerName}! Registramos tu orden *${repair.id}* para tu ${appliance}.\n\nPodés consultar el estado ingresando tu número de seguimiento en:\nhttps://larejaservice.com.ar/seguimiento`
                             );
                           }
 
@@ -2002,7 +2038,7 @@ export default function Admin() {
                                 <div className="font-black text-slate-900 font-mono text-sm">{repair.id}</div>
                                 <div className="text-slate-400 text-xs">{new Date(repair.date).toLocaleDateString('es-AR')}</div>
                                 <a
-                                  href={`/tracking?code=${repair.id}`}
+                                  href={`/seguimiento?code=${repair.id}`}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="inline-flex items-center gap-1 text-[11px] font-bold text-[#29ABE2] hover:underline mt-1"
@@ -2108,9 +2144,9 @@ export default function Admin() {
                                   Editar / Notas
                                 </button>
 
-                                {cleanPhone && (
+                                {waPhoneRow && (
                                   <a
-                                    href={`https://wa.me/${cleanPhone.startsWith('54') ? cleanPhone : `549${cleanPhone}`}?text=${waText}`}
+                                    href={`https://wa.me/${waPhoneRow}?text=${waText}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="w-full px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-colors"
@@ -4279,7 +4315,7 @@ export default function Admin() {
                 <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl flex items-center justify-between text-xs text-sky-900">
                   <span>Página de seguimiento para este equipo:</span>
                   <a
-                    href={`/tracking?code=${editingRepair.id}`}
+                    href={`/seguimiento?code=${editingRepair.id}`}
                     target="_blank"
                     rel="noreferrer"
                     className="font-bold text-[#29ABE2] hover:underline flex items-center gap-1"
